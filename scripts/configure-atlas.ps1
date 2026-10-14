@@ -6,10 +6,15 @@ if (Test-Path -LiteralPath $localNode) { $env:PATH = "$(Split-Path -Parent $loca
 if (-not (Test-Path -LiteralPath 'node_modules')) { & npm.cmd ci; if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' } }
 Write-Host 'This initializes the selected Atlas database and creates a verified platform administrator. Existing account passwords are preserved.'
 $secureUri = Read-Host 'Paste the COMPLETE MongoDB URI (input is hidden)' -AsSecureString
-$atlasUri = [System.Net.NetworkCredential]::new('', $secureUri).Password
+$atlasUri = ([System.Net.NetworkCredential]::new('', $secureUri).Password).Trim()
 if ($atlasUri -notmatch '^mongodb(?:\+srv)?://') { throw 'Use the complete MongoDB connection URI.' }
 $parsedUri = [Uri]$atlasUri
-if (-not $parsedUri.AbsolutePath.Trim('/')) { throw 'Include /dentalclinic before the URI query string.' }
+if (-not $parsedUri.AbsolutePath.Trim('/')) {
+    # Atlas commonly supplies an empty database path. Preserve credentials and query parameters verbatim.
+    $atlasUri = [regex]::Replace($atlasUri, '^(mongodb(?:\+srv)?://[^/?]+)/*(?=\?|$)', '$1/dentalclinic')
+    $parsedUri = [Uri]$atlasUri
+    Write-Host 'Added /dentalclinic automatically because the copied URL did not specify a database.'
+}
 Write-Host "Selected database: $($parsedUri.AbsolutePath.Trim('/')) on $($parsedUri.Host)"
 $adminEmail = Read-Host 'Super-admin email'
 if ($adminEmail -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$') { throw 'Enter a valid administrator email.' }
