@@ -11,3 +11,4 @@ dist-server/
 backups/
 test-results/
 playwright-report/
+.local-mongo/

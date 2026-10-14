@@ -15,10 +15,10 @@ export async function reconcilePayments(invoiceId?: string, fetcher: typeof fetc
     where: {
       ...(invoiceId ? { id: invoiceId } : {}),
       status: { in: ['PENDING', 'FAILED'] },
-      providerOrderId: { not: null },
+      providerOrderId: { startsWith: 'order_' },
     },
     orderBy: { createdAt: 'asc' },
-    take: 100,
+    take: 5,
   });
   let settled = 0;
   const failures: string[] = [];

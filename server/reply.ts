@@ -24,6 +24,8 @@ export class Reply {
     return this;
   }
   flush(res: any) {
+    const bytes = this.kind === 'json' ? Buffer.byteLength(JSON.stringify(this.body)) : Buffer.isBuffer(this.body) ? this.body.length : Buffer.byteLength(String(this.body));
+    assert(!process.env.VERCEL || bytes <= 4 * 1024 * 1024, 413, 'Response is too large. Narrow your query or export a smaller date range.');
     for (const [key, value] of Object.entries(this.headers)) res.setHeader(key, value);
     res.status(this.code);
     res[this.kind](this.body);

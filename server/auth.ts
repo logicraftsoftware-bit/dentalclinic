@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { db, opaque, hash, assert, prod, authenticate, text, id } from './core.js';
+import { db, transaction, lock, opaque, hash, assert, prod, authenticate, text, id } from './core.js';
 import { sendToken } from './mail.js';
 
 export const auth = Router();
@@ -53,8 +53,8 @@ auth.post(
     );
     const passwordHash = await bcrypt.hash(input.password, 12);
     const token = opaque();
-    const result = await db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.email}, 0))`;
+    const result = await transaction(async (tx) => {
+      await lock(tx, input.email);
       const existing = await tx.user.findUnique({ where: { email: input.email } });
       if (existing) {
         assert(
@@ -108,7 +108,7 @@ auth.post(
           endsAt: new Date(Date.now() + plan.trialDays * 86400000),
         },
       });
-      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+
       await tx.branch.create({ data: { tenantId: tenant.id, name: 'Main clinic' } });
       await tx.catalogItem.createMany({
         data: [
@@ -147,7 +147,7 @@ auth.post(
   '/verify',
   wrap(async (req: any, res: any) => {
     const { token } = z.object({ token: z.string().length(64) }).parse(req.body);
-    await db.$transaction(async (tx) => {
+    await transaction(async (tx) => {
       const t = await tx.authToken.findUnique({ where: { tokenHash: hash(token) } });
       assert(
         t && t.purpose === 'VERIFY' && t.expiresAt > new Date(),
@@ -248,7 +248,7 @@ auth.post(
   wrap(async (req: any, res: any) => {
     const input = z.object({ token: z.string().length(64), password }).parse(req.body);
     const passwordHash = await bcrypt.hash(input.password, 12);
-    await db.$transaction(async (tx) => {
+    await transaction(async (tx) => {
       const t = await tx.authToken.findUnique({ where: { tokenHash: hash(input.token) } });
       assert(
         t && t.purpose === 'RESET' && t.expiresAt > new Date(),

@@ -5,7 +5,30 @@ import type { Request } from 'express';
 import pino from 'pino';
 import { z } from 'zod';
 
-export const db = new PrismaClient();
+const globalDb = globalThis as unknown as { dentaflowDb?: PrismaClient };
+function databaseOptions() {
+  const value = process.env.DATABASE_URL;
+  if (!value || !/^mongodb(?:\+srv)?:\/\//.test(value)) throw new Error('Set DATABASE_URL to a MongoDB replica-set connection string.');
+  const uri = new URL(value);
+  if (!uri.searchParams.has('maxPoolSize')) uri.searchParams.set('maxPoolSize', '10');
+  if (!uri.searchParams.has('serverSelectionTimeoutMS')) uri.searchParams.set('serverSelectionTimeoutMS', '8000');
+  return { datasources: { db: { url: uri.toString() } } };
+}
+export const db = globalDb.dentaflowDb ?? new PrismaClient(databaseOptions());
+globalDb.dentaflowDb = db;
+export async function lock(tx: Prisma.TransactionClient, key: string) {
+  await tx.transactionLock.upsert({ where: { id: key }, create: { id: key, revision: 1 }, update: { revision: { increment: 1 } } });
+}
+export async function transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>, options: { maxWait?: number; timeout?: number } = {}): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await db.$transaction(fn, { maxWait: 15000, timeout: 20000, ...options }); }
+    catch (error: any) {
+      const conflict = error.code === 'P2034' || (error.code === 'P2002' && String(error.meta?.modelName) === 'TransactionLock');
+      if (!conflict || attempt >= 5) throw error;
+      await new Promise(resolve => setTimeout(resolve, 25 * 2 ** attempt + Math.random() * 30));
+    }
+  }
+}
 export const log = pino({ redact: ['password', 'token', 'cookie', 'authorization'] });
 export const prod = process.env.NODE_ENV === 'production';
 export const opaque = () => randomBytes(32).toString('hex');
@@ -142,12 +165,32 @@ export class TenantStore {
     assert(row, 404, 'Record not found in your clinic.');
     return row;
   }
-  create(name: OwnedModel, data: Record<string, unknown>) {
+  private async validateReferences(name: OwnedModel, data: Record<string, unknown>) {
+    const references: Partial<Record<OwnedModel, Record<string, OwnedModel>>> = {
+      doctor: { branchId: 'branch' }, appointment: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
+      clinicalNote: { patientId: 'patient' }, chartVersion: { patientId: 'patient' }, treatmentPlan: { patientId: 'patient' },
+      treatmentItem: { planId: 'treatmentPlan' }, treatmentSession: { itemId: 'treatmentItem', doctorId: 'doctor' },
+      invoice: { patientId: 'patient', sessionId: 'treatmentSession' }, payment: { invoiceId: 'invoice' },
+      commission: { doctorId: 'doctor', paymentId: 'payment' }, document: { patientId: 'patient' },
+      prescription: { patientId: 'patient' }, followUp: { patientId: 'patient' }, communication: { patientId: 'patient' },
+    };
+    for (const [field, model] of Object.entries(references[name] || {})) {
+      const value = data[field];
+      if (value != null) { assert(typeof value === 'string', 400, 'Invalid related record.'); await this.get(model, value); }
+    }
+    for (const [field, value] of Object.entries(data)) {
+      const jsonField = (name === 'chartVersion' && field === 'teeth') || (name === 'idempotencyRecord' && ['body', 'headers'].includes(field));
+      assert(value === null || typeof value !== 'object' || value instanceof Date || jsonField, 400, 'Nested writes are not supported.');
+    }
+  }
+  async create(name: OwnedModel, data: Record<string, unknown>) {
+    await this.validateReferences(name, data);
     return this.model(name).create({ data: { ...data, tenantId: this.tenantId } });
   }
   async update(name: OwnedModel, recordId: string, data: Record<string, unknown>) {
     await this.get(name, recordId);
     const { id: _id, tenantId: _tenant, ...safe } = data;
+    await this.validateReferences(name, safe);
     return this.model(name).update({
       where: { tenantId_id: { tenantId: this.tenantId, id: recordId } },
       data: safe,
@@ -177,11 +220,11 @@ export async function clinic<T>(
 ) {
   assert(actor.tenantId, 403, 'Choose an authorized clinic workspace.');
   const tenantId = actor.tenantId;
-  return db.$transaction(
+  return transaction(
     async (tx) => {
       // Serialize tenant writes/counts and recheck status after acquiring the lock.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId}, 0))`;
-      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+      await lock(tx, tenantId);
+
       const membership = await tx.membership.findUnique({
         where: { userId_tenantId: { userId: actor.userId, tenantId } },
       });

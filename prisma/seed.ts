@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
+import { db, transaction } from '../server/core.js';
 import bcrypt from 'bcryptjs';
-const db=new PrismaClient();
+
 async function main(){
   const definitions=[
     {name:'Starter',monthlyPaise:99900,annualPaise:999000,limits:{doctors:2,staff:3,branches:1,patients:null,storageBytes:1073741824},features:{export:false,customBranding:false,advancedReports:false,advancedCommissions:false,prioritySupport:false}},
@@ -18,10 +18,10 @@ async function main(){
     const plan=await db.plan.findUniqueOrThrow({where:{name:'Professional'}});
     for(const [slug,name,ownerEmail] of [['sunrise-dental','Sunrise Dental Clinic','owner@sunrise.test'],['smilecare','SmileCare Dental Studio','owner@smilecare.test']]){
       if(await db.tenant.findUnique({where:{slug}}))continue;
-      await db.$transaction(async tx=>{
+      await transaction(async tx=>{
         const tenant=await tx.tenant.create({data:{slug,name,ownerEmail,phone:'+91 98765 43210',settings:{timezone:'Asia/Kolkata',currency:'INR',address:'Guwahati, Assam',invoiceFooter:'Thank you for trusting us with your smile.',appointmentHours:'Mon–Sat · 9 am–6 pm'}}});
         const user=await tx.user.create({data:{email:ownerEmail,name:'Dr. Aditi Sharma',passwordHash:await bcrypt.hash(pass,12),verified:true}});await tx.membership.create({data:{userId:user.id,tenantId:tenant.id,role:'OWNER'}});await tx.subscription.create({data:{tenantId:tenant.id,planId:plan.id,endsAt:new Date(Date.now()+14*86400000)}});
-        await tx.$executeRaw`SELECT set_config('app.tenant_id',${tenant.id},true)`;
+
         const branch=await tx.branch.create({data:{tenantId:tenant.id,name:'Main clinic',address:'Guwahati, Assam'}});
         const doctor=await tx.doctor.create({data:{tenantId:tenant.id,name:'Dr. Aditi Sharma',specialty:'Endodontist',commissionPercent:20,branchId:branch.id}});
         await tx.doctor.create({data:{tenantId:tenant.id,name:'Dr. Rohan Das',specialty:'General Dentistry',commissionPercent:15,branchId:branch.id}});

@@ -1,39 +1,73 @@
-# Deployment and operation
+# Vercel deployment with MongoDB Atlas
 
-Use Node 22+ and PostgreSQL 16+ (local tests use PostgreSQL 18). Never use the database schema owner or a superuser as the runtime identity. Production startup rejects a role that bypasses RLS.
+## 1. Database
 
-## Development on this workstation
+Create a separate DentalClinic Atlas project and replica-set cluster. Use a database named `dentalclinic` and a dedicated user with readWrite restricted to that database. Set DATABASE_URL to the complete mongodb+srv URI with a URL-encoded password and explicit database name. The URI already saved in Vercel must use this database.
 
-The isolated Node runtime is `.tools/node-v22.14.0-win-x64`. Prepend it to PATH if Node is not installed globally. Run `npm ci`, `npm run db:local` in one terminal, then `node scripts/setup-local.mjs` in another. This creates an isolated UTF-8 database, applies initial migrations and configures a restricted development role. Run `npm run db:seed` and `npm run dev`; open http://localhost:5173. Keep the database terminal open. `.env` and `.local-db` are ignored by Git.
+Configure Atlas network access for your Vercel function's outbound traffic. Hobby has dynamic outbound IPs; an all-IP rule is a temporary option for isolated dummy-data testing, while production should use static outbound IPs and a restricted access list. Select a backup-capable Atlas deployment and rehearse restoration before patient-data use. Use a separate database and database user for Preview deployments.
 
-To create a platform admin set PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD (12+ characters) in your local `.env` before `npm run db:seed`. The seed never overwrites existing passwords or edited plan prices. Optional two-clinic demo data requires SEED_DEMO=true and a separately supplied DEMO_PASSWORD. Demo seed refuses production.
+## 2. Vercel settings
 
-## Staging and production
+Import logicraftsoftware-bit/dentalclinic from GitHub. Framework: Vite. Root: repository root. Install: npm ci. Build: npm run build. Output: dist. Node.js: 22.x. The checked-in vercel.json handles same-origin API routes and SPA fallback. The server does not start a separate listener inside Vercel. Prisma generation happens during build; schema/index synchronization and seeding do not.
 
-Create separate databases, volumes, email credentials and Razorpay test/live accounts for each environment. Copy `.env.example` to `.env.production`; set NODE_ENV=production, APP_URL=https://your-domain, BASE_DOMAIN=your-domain, SMTP credentials, sender identity, support account and Razorpay credentials. Never put secrets into Vite variables.
+## 3. Environment variables
 
-Set DB_OWNER_PASSWORD, DB_RUNTIME_PASSWORD, PRIMARY_DOMAIN and ACME_EMAIL in the compose invocation environment. Connection URL passwords must be percent-encoded if they contain URL-special characters. Use distinct generated secrets. Run `docker compose -f deploy/compose.yml up --build -d`. The one-shot migration container runs before the app. Seed the plans and platform administrator with `docker compose -f deploy/compose.yml --profile setup run --rm seed`; this uses the restricted runtime identity and admin credentials from the production environment. Do not seed demo patients in production. The GitHub CI workflow validates builds, tenant security, browser workflows and a restore against an isolated PostgreSQL service; Dependabot configuration prepares weekly dependency update PRs when the repository is hosted on GitHub.
+Set these for the intended deployment environment:
 
-The production image serves the built frontend and API on one origin. Only Caddy exposes HTTP/HTTPS; PostgreSQL is on the private compose network. `/api/health` checks the database and supports external uptime alerts. Structured logs exclude clinical bodies and credentials. Send stderr/stdout to your log collector and configure alerts for health failures, 5xx spikes, job failures, failed renewals and backup freshness. Monitor disk/storage capacity.
+- DATABASE_URL: complete Atlas URI.
+- APP_URL: your actual HTTPS deployment origin, such as https://dentalclinic-example.vercel.app.
+- BASE_DOMAIN: that hostname without https://, or your configured custom base domain.
+- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, MAIL_FROM: a functioning email provider for signup and password reset.
+- CRON_SECRET: at least 32 random characters; protects /api/cron/jobs.
+- S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY: a private document bucket and scoped credentials. Optional S3_ENDPOINT for compatible storage.
+- RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET: only when enabling payment checkout. Provider webhook: APP_URL/api/webhooks/razorpay.
 
-## Clinic subdomains
+No secret variable uses the VITE_ prefix. Use different APP_URL/BASE_DOMAIN values for a dedicated staging deployment; arbitrary preview domains are intentionally not trusted for authenticated mutations. Do not reuse the production database for previews.
 
-Create primary and wildcard DNS records pointing to the reverse proxy. Subdomains use `<tenant.slug>.<BASE_DOMAIN>`. Auth sessions are host-only; sign in on the clinic hostname. Clinic middleware verifies the authenticated active membership against the hostname and rejects mismatches. Arbitrary frontend tenant IDs are never used for scope. Custom domains need manual ownership verification and TenantDomain rows; automatic provisioning is not included.
+## 4. Initialize once from a trusted local terminal
 
-Wildcard HTTPS needs DNS-01 issuance and a DNS provider module for Caddy (the standard image lacks it). Build a provider-enabled Caddy image, supply its DNS token from the secret store and enable the wildcard block. The shipped proxy config covers the primary domain only. Do not expose HTTP clinic subdomains for patient traffic.
+On the prepared Windows workspace, the simplest option is:
 
-## Email, checkout and scheduled work
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-atlas.ps1
+```
 
-Configure SMTP, SPF/DKIM/DMARC and confirm verification/reset email delivery in staging. Development may return a token for local testing; production never does. Browser checkout creates a server-side Razorpay order. Configure `/api/webhooks/razorpay` with captured, failed and processed refund events, and the matching webhook secret. The browser callback never activates paid access. Test duplicate and reordered deliveries with the provider sandbox. No recurring mandate/autopay integration is claimed; monthly/annual paid periods currently use one-time orders and reminder-driven renewals.
+The script asks privately for the complete Atlas URI and your desired super-admin credentials, initializes indexes/plans, and restores the previous process environment without saving passwords. Atlas must allow your current computer IP while running it. Keep API/dev processes stopped during Prisma generation on Windows.
 
-Run `docker compose -f deploy/compose.yml --profile jobs run --rm jobs` hourly via your scheduler. Configured Razorpay orders are reconciled through authenticated server-to-provider requests before tenant lifecycle work; the platform invoice screen can trigger reconciliation too. Each tenant job establishes its own transaction context and uses tenant-scoped job keys. Email reminder delivery is at-least-once if the worker dies after delivery but before committing; use a provider idempotency key/outbox before large-scale message automation.
+Alternatively, install dependencies locally with Node.js 22. Pull the target Vercel environment into an ignored file, or set the corresponding environment variables locally. Verify the selected database before initialization. For example:
 
-## Backup and restore
+```powershell
+npx vercel env pull .env.production.local --environment=production
+$env:DOTENV_CONFIG_PATH = '.env.production.local'
+# Clear any previously exported DATABASE_URL so the selected dotenv file is used.
+Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue
+npm run db:generate
+npm run db:push
+$env:PLATFORM_ADMIN_EMAIL = 'your-admin@example.com'
+# Enter a unique 12+ character password privately; never put it in a commit.
+$adminSecure = Read-Host 'New platform administrator password' -AsSecureString
+$env:PLATFORM_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $adminSecure).Password
+npm run db:seed
+Remove-Item Env:PLATFORM_ADMIN_PASSWORD
+Remove-Item Env:DOTENV_CONFIG_PATH
+```
 
-`deploy/backup.sh` requires bash, PostgreSQL tools, age, libpq connection environment variables (PGHOST, PGDATABASE, PGUSER, PGPASSWORD) for a privileged backup identity and an age public recipient. The backup role must be able to read all tenants (SUPERUSER/BYPASSRLS); its credentials must never be used by the application. Secrets are supplied in the environment rather than command arguments. Run daily, ship encrypted output off-site and monitor freshness. Back up the document volume at a consistent point with the database. Retention is an operator policy, not a destructive automatic job. Keep restore private keys outside the application.
+`db:push` creates collections/indexes plus a TTL index for shared rate-limit counters. Seed creates plans, platform settings, and a verified admin only when a password is supplied. Existing accounts are unchanged; use the normal reset flow to change existing passwords. Do not use --accept-data-loss or run old SQL migration commands. Do not expose a public setup endpoint or seed on every build.
 
-`deploy/restore.sh` uses RESTORE_DATABASE, AGE_IDENTITY_FILE and libpq PGHOST/PGUSER/PGPASSWORD connection variables, and refuses a target that already has public tables. It restores into an empty, isolated database without cleaning existing tables. Never point it at live production. Re-provision runtime grants after restoring with a new schema owner. Verify tenant counts, record counts, invoice/payment sums, document metadata and attachment hashes; test sample logins, RLS and exports. A local automated full database dump/restore test is in `scripts/test-restore.mjs`; on this Windows setup first run `node scripts/fetch-local-pg-tools.mjs` if the CLI executables are missing. Tenant JSON exports are portable evidence/data backups, not a full database restore format.
+## 5. Private documents
 
-## Commercial launch gates
+Create a private S3 bucket, preferably near Atlas/Vercel's chosen region. Enable Block Public Access, encryption and versioning. Give the service identity only s3:GetObject, s3:PutObject and s3:DeleteObject on the bucket's objects. Do not grant public ACLs. Keys contain the authorized tenant ID plus a random suffix; reads require an active clinic membership, document permission and matching tenant ownership. Credentials stay on the server. No browser CORS rule is needed for these server-mediated uploads.
 
-The implementation is runnable, but the complete commercial specification remains larger than this release. Finish and validate recurring mandates, configurable branch-level staff authorization, custom permissions, optional MFA, retention execution, messaging delivery, enterprise database routing, alert integrations and disaster-recovery objectives. Reconciliation and the controlled support summary workflow are implemented and tested with synthetic records; independently review them and verify real provider responses before launch. Finalize legal/tax documents with the operator's advisers. Perform an independent tenant-isolation penetration test and load test on the actual hosting setup. No existing-system migration or live provider verification has been performed.
+Uploads/downloads are capped at 3 MB to fit Vercel payload limits. Local development can use STORAGE_PATH; Vercel refuses filesystem fallback. Larger files require a future direct-upload/download workflow with separately validated authorization. Storage is written outside MongoDB transactions; a function crash can leave an unreferenced object, so periodically reconcile object keys with document metadata. Do not delete unreferenced files without retention review.
+
+## 6. Deploy and verify
+
+Redeploy after adding environment variables. /api/health should return {"status":"ok"}; /api/public/plans should show seeded plans. Test admin login, email verification/reset, separate clinics, appointments, session billing, payment replay, private documents and provider webhooks in staging before go-live. Check function logs without printing credentials or patient data.
+
+The configured cron runs daily at 02:00 UTC (07:30 Asia/Calcutta), compatible with Hobby scheduling. It processes at most ten clinics and five pending payment orders per invocation, using a persisted clinic cursor and lease. For larger installations on a suitable paid plan, increase invocation frequency or use a durable queue. A reminder stuck in SENDING after interruption requires operator review; SMTP cannot guarantee exactly-once delivery. Clinically operational access checks expiration on every request independently of cron.
+
+Use an appropriate commercial Vercel plan, monitoring, backup/restore drills and defined retention procedures for real clinic operation. Free demo infrastructure is not a completed production healthcare deployment.
+
+## Existing PostgreSQL data
+
+The conversion preserves UUIDs as MongoDB string _id values. It does not import PostgreSQL data. If real records exist, take an encrypted database/file backup, freeze writes, map every model and relation, import into isolated staging, backfill unique non-null provider keys and lock metadata, verify all tenant references and financial sums, rehearse rollback, then schedule cutover. Keep the original database intact. The SQL migrations and VPS scripts are archived under legacy/postgresql and are not used by MongoDB.

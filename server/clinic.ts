@@ -3,7 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import path from 'node:path';
-import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
+import { saveDocument, loadDocument, deleteDocument } from './storage.js';
 import {
   authenticate,
   clinic,
@@ -482,6 +482,7 @@ clinicApi.post(
       await store.create('invoice', {
         patientId: plan.patientId,
         sessionId: row.id,
+        sourceKey: row.id,
         description: `${item.name} · Tooth ${item.tooth} · Session ${sessions.length + 1}`,
         totalPaise: data.feePaise,
       });
@@ -825,7 +826,7 @@ clinicApi.get(
 );
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 3 * 1024 * 1024, files: 1 },
 });
 clinicApi.post(
   '/documents',
@@ -849,11 +850,8 @@ clinicApi.post(
       409,
       'Document storage limit reached.',
     );
-    const root = path.resolve(process.env.STORAGE_PATH || 'storage');
-    const dir = path.join(root, store.tenantId);
-    await mkdir(dir, { recursive: true });
     const storageKey = `${store.tenantId}/${opaque()}`;
-    await writeFile(path.join(root, storageKey), b, { flag: 'wx' });
+    await saveDocument(storageKey, b, mime);
     try {
       const row = await store.create('document', {
         patientId,
@@ -869,7 +867,7 @@ clinicApi.post(
       delete row.storageKey;
       res.status(201).json(row);
     } catch (e) {
-      await unlink(path.join(root, storageKey));
+      await deleteDocument(storageKey);
       throw e;
     }
   }),
@@ -883,9 +881,7 @@ clinicApi.get(
       500,
       'Invalid document path.',
     );
-    const contents = await readFile(
-      path.resolve(process.env.STORAGE_PATH || 'storage', doc.storageKey),
-    );
+    const contents = await loadDocument(doc.storageKey);
     await store.audit(actor.userId, 'document.downloaded', doc.id);
     res.setHeader('Content-Type', doc.mime);
     res.setHeader(

@@ -131,6 +131,10 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await dialog.getByLabel('Patient consent recorded').check();
   await dialog.getByRole('button', { name: 'Save changes' }).click();
   await page.getByRole('button', { name: 'Open record' }).click();
+  await page.route('**/api/clinic/charts?*', async route => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await route.continue();
+  });
   await page.getByRole('button', { name: 'Tooth chart', exact: true }).click();
   await page.getByRole('button', { name: 'Tooth 36: Healthy', exact: true }).click();
   await page.getByLabel('Condition', { exact: true }).selectOption('Caries');

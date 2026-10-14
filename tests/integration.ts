@@ -62,15 +62,7 @@ async function register(name: string) {
   return { tenantId: signup.data.tenantId, cookie: login.cookie, email };
 }
 before(async () => {
-  const roles = await db.$queryRaw<
-    any[]
-  >`SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user`;
-  assert.equal(
-    roles[0].rolsuper,
-    false,
-    'Integration suite must use a non-superuser runtime role.',
-  );
-  assert.equal(roles[0].rolbypassrls, false);
+  await db.$runCommandRaw({ ping: 1 });
   plan = await db.plan.findUniqueOrThrow({ where: { name: 'Starter' } });
   a = await register('Isolation Clinic A');
   b = await register('Isolation Clinic B');
@@ -142,35 +134,21 @@ test('cross-tenant detail, update, search and exports are denied', async () => {
     400,
   );
 });
-test('RLS fails closed without context and composite FKs reject foreign patient references', async () => {
-  assert.equal(await db.patient.count(), 0);
-  await assert.rejects(
-    db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT set_config('app.tenant_id',${a.tenantId},true)`;
-      await tx.invoice.create({
-        data: {
-          tenantId: a.tenantId,
-          patientId: patientB.id,
-          description: 'Invalid',
-          totalPaise: 100,
-        },
-      });
-    }),
-  );
-  await assert.rejects(
-    db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT set_config('app.tenant_id',${a.tenantId},true)`;
-      await tx.patient.create({
-        data: { tenantId: b.tenantId, name: 'Forbidden', phone: '0000000000' },
-      });
-    }),
-  );
-  assert.equal(
-    await db.patient.count(),
-    0,
-    'Transaction-local context must not persist on pooled connections.',
-  );
+test('MongoDB repository rejects cross-clinic relationships and scopes every read', async () => {
+  const { TenantStore, transaction, lock } = await import('../server/core.js');
+  await assert.rejects(transaction(async tx => {
+    await lock(tx, a.tenantId);
+    const store = new TenantStore(tx, a.tenantId);
+    await store.create('invoice', { patientId: patientB.id, description: 'Invalid', totalPaise: 100 });
+  }), /Record not found/);
+  await transaction(async tx => {
+    const store = new TenantStore(tx, a.tenantId);
+    assert.equal((await store.list('patient', { tenantId: b.tenantId })).every((row: any) => row.tenantId === a.tenantId), true);
+    await assert.rejects(store.get('patient', patientB.id), /Record not found/);
+    await assert.rejects(store.update('patient', patientA.id, { name: { set: 'Nested write' } }), /Nested writes/);
+  });
 });
+
 test('concurrent doctor creation cannot race through plan limits', async () => {
   const results = await Promise.all(
     [1, 2, 3].map((i) =>
@@ -649,4 +627,55 @@ test('server-side reconciliation settles only matching captured provider payment
   assert.deepEqual(invalid.failedInvoiceIds, [wrong.id]);
   delete process.env.RAZORPAY_KEY_ID;
   delete process.env.RAZORPAY_KEY_SECRET;
+});
+
+test('shared rate counters apply across concurrent requests and cron rejects missing secrets', async () => {
+  const bucket = `test:${randomUUID()}`;
+  const { sharedRateLimit } = await import('../server/rate-limit.js');
+  const limiter = sharedRateLimit(bucket, 60000, 2);
+  const statuses = await Promise.all([1,2,3,4,5].map(() => new Promise<number>((resolve, reject) => {
+    const res: any = { setHeader() {}, status(code: number) { this.code = code; return this; }, json() { resolve(this.code); } };
+    limiter({ ip: '192.0.2.1', socket: {} } as any, res, (error?: any) => error ? reject(error) : resolve(200));
+  })));
+  assert.equal(statuses.filter(code => code === 200).length, 2);
+  assert.equal(statuses.filter(code => code === 429).length, 3);
+  assert.equal((await request('/cron/jobs')).status, 401);
+  const counters: any = await db.rateBucket.findMany({ where: { id: { startsWith: bucket } } });
+  assert.equal(counters[0].count, 5);
+  assert(counters[0].expiresAt instanceof Date);
+});
+
+test('MongoDB optional provider identities allow multiple pending invoices and events', async () => {
+  const [first, second] = await Promise.all([1,2].map(() => db.subscriptionInvoice.create({ data: { tenantId: a.tenantId, planId: plan.id, interval: 'MONTHLY', subtotalPaise: 100, taxPaise: 0, totalPaise: 100 } })));
+  assert.notEqual(first.providerOrderId, second.providerOrderId);
+  const events = await Promise.all([1,2].map(() => db.subscriptionEvent.create({ data: { kind: 'TEST_INTERNAL' } })));
+  assert.notEqual(events[0].providerEventId, events[1].providerEventId);
+});
+
+test('Vercel document storage refuses an ephemeral filesystem fallback', async () => {
+  const previous = process.env.VERCEL;
+  process.env.VERCEL = '1';
+  try {
+    const form = new FormData();
+    form.append('patientId', patientB.id);
+    form.append('file', new Blob(['%PDF-1.7 synthetic']), 'synthetic.pdf');
+    const result = await request('/clinic/documents', 'POST', form, b.cookie);
+    assert.equal(result.status, 503, JSON.stringify(result.data));
+    assert.match(result.data.error, /private storage|S3_BUCKET/);
+  } finally { if (previous === undefined) delete process.env.VERCEL; else process.env.VERCEL = previous; }
+});
+
+test('cron respects an active persisted lease and processes a bounded clinic page', async () => {
+  const { runJobs } = await import('../server/jobs.js');
+  await db.cronState.upsert({ where: { id: 'jobs' }, create: { id: 'jobs', leaseExpiresAt: new Date(Date.now() + 60000) }, update: { leaseExpiresAt: new Date(Date.now() + 60000) } });
+  assert.deepEqual(await runJobs(), { skipped: true });
+  await db.cronState.update({ where: { id: 'jobs' }, data: { leaseExpiresAt: new Date(0) } });
+  const oldKey = process.env.RAZORPAY_KEY_ID;
+  delete process.env.RAZORPAY_KEY_ID;
+  try {
+    const result = await runJobs();
+    assert(typeof result.processed === 'number' && result.processed <= 10);
+    const state = await db.cronState.findUniqueOrThrow({ where: { id: 'jobs' } });
+    assert.equal(state.leaseExpiresAt.getTime(), 0);
+  } finally { if (oldKey) process.env.RAZORPAY_KEY_ID = oldKey; }
 });

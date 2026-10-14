@@ -3,21 +3,8 @@ on: [push, pull_request]
 jobs:
   validate:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ci-owner-only
-          POSTGRES_DB: dentaflow
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres -d dentaflow"
-          --health-interval 5s --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: postgresql://dentaflow_runtime:ci-runtime-only@localhost:5432/dentaflow?schema=public
-      APP_URL: http://localhost:5173
-      BASE_DOMAIN: localhost
+      DATABASE_URL: mongodb://127.0.0.1:27019/dentalclinic?replicaSet=rs0
       NODE_ENV: development
     steps:
       - uses: actions/checkout@v4
@@ -25,28 +12,9 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run db:generate
-      - run: npm run db:migrate
-        env:
-          DATABASE_URL: postgresql://postgres:ci-owner-only@localhost:5432/dentaflow?schema=public
-      - name: Provision restricted runtime
-        env: { PGPASSWORD: ci-owner-only }
-        run: |
-          psql -h localhost -U postgres -d dentaflow -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE ROLE dentaflow_runtime LOGIN PASSWORD 'ci-runtime-only' NOSUPERUSER NOBYPASSRLS;
-          GRANT USAGE ON SCHEMA public TO dentaflow_runtime;
-          GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO dentaflow_runtime;
-          GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO dentaflow_runtime;
-          SQL
-      - run: npm run db:seed
-      - run: npm run build
-      - run: npm test
-      - run: npm run test:integration
       - run: npx playwright install --with-deps chromium
-      - run: npx playwright test
-      - run: node scripts/test-restore.mjs
-        env:
-          PG_BIN: /usr/lib/postgresql/16/bin
-          RESTORE_TEST_SOURCE_URL: postgresql://postgres:ci-owner-only@localhost:5432/dentaflow
+      - run: npm run test:mongo -- --browser
+      - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
       - uses: actions/upload-artifact@v4
         if: failure()

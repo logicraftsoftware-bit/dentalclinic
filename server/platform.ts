@@ -3,6 +3,8 @@ import { z } from 'zod';
 import {
   authenticate,
   db,
+  transaction,
+  lock,
   assert,
   id,
   text,
@@ -16,7 +18,7 @@ import {
   type Actor,
 } from './core.js';
 import { sendToken } from './mail.js';
-import { transactionalReply } from './reply.js';
+import { transactionalReply, Reply } from './reply.js';
 
 export const platformApi = Router();
 export const billingApi = Router();
@@ -24,7 +26,9 @@ const admin = (fn: any) => (req: any, res: any, next: any) =>
   authenticate(req)
     .then(async (actor) => {
       assert(actor.platformAdmin, 403, 'Platform administrator access required.');
-      await fn(req, res, actor);
+      const reply = new Reply();
+      await fn(req, reply, actor);
+      reply.flush(res);
     })
     .catch(next);
 const owner = (fn: any) => (req: any, res: any, next: any) =>
@@ -169,8 +173,8 @@ platformApi.patch(
       })
       .strict()
       .parse(req.body);
-    const row = await db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId},0))`;
+    const row = await transaction(async (tx) => {
+      await lock(tx, tenantId);
       const row = await tx.tenant.update({
         where: { id: tenantId },
         data: {
@@ -214,8 +218,8 @@ platformApi.post(
       })
       .strict()
       .parse(req.body);
-    const row = await db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId},0))`;
+    const row = await transaction(async (tx) => {
+      await lock(tx, tenantId);
       const plan = await tx.plan.findUnique({ where: { id: input.planId } });
       assert(plan, 404, 'Plan not found.');
       const row = await tx.subscription.update({
@@ -254,7 +258,7 @@ platformApi.post(
   '/plans',
   admin(async (req: any, res: any, actor: Actor) => {
     const data = planSchema.parse(req.body);
-    const row = await db.$transaction(async (tx) => {
+    const row = await transaction(async (tx) => {
       const row = await tx.plan.create({ data });
       await audit(tx, actor, 'PLAN_CREATED', undefined, { planId: row.id });
       return row;
@@ -266,7 +270,7 @@ platformApi.patch(
   '/plans/:id',
   admin(async (req: any, res: any, actor: Actor) => {
     const data = planSchema.partial().parse(req.body);
-    const row = await db.$transaction(async (tx) => {
+    const row = await transaction(async (tx) => {
       const row = await tx.plan.update({ where: { id: id.parse(req.params.id) }, data });
       await audit(tx, actor, 'PLAN_UPDATED', undefined, { planId: row.id, changes: data });
       return row;
@@ -335,7 +339,7 @@ platformApi.patch(
       })
       .strict()
       .parse(req.body);
-    await db.$transaction(async (tx) => {
+    await transaction(async (tx) => {
       await tx.platformSettings.upsert({
         where: { id: 'platform' },
         create: { data },
@@ -362,7 +366,7 @@ platformApi.patch(
       })
       .strict()
       .parse(req.body);
-    const row = await db.$transaction(async (tx) => {
+    const row = await transaction(async (tx) => {
       const row = await tx.supportRequest.update({ where: { id: id.parse(req.params.id) }, data });
       await audit(tx, actor, 'SUPPORT_UPDATED', row.tenantId, { requestId: row.id, ...data });
       return row;
@@ -383,8 +387,8 @@ platformApi.get(
       where: { id: id.parse(req.params.id) },
     });
     assert(initial, 404, 'Grant not found.');
-    const summary = await db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${initial.tenantId},0))`;
+    const summary = await transaction(async (tx) => {
+      await lock(tx, initial.tenantId);
       const grant = await tx.supportAccessGrant.findUniqueOrThrow({ where: { id: initial.id } });
       assert(
         grant.adminUserId === actor.userId &&
@@ -402,7 +406,7 @@ platformApi.get(
         403,
         'Customer consent is no longer valid.',
       );
-      await tx.$executeRaw`SELECT set_config('app.tenant_id',${grant.tenantId},true)`;
+
       const store = new TenantStore(tx, grant.tenantId);
       const patient = await store.get('patient', grant.patientId);
       const [notes, charts, plans] = await Promise.all([
@@ -444,7 +448,7 @@ platformApi.post(
     const user = await db.user.findUnique({ where: { email: tenant.ownerEmail } });
     assert(user, 404, 'Owner account not found.');
     const token = opaque();
-    await db.$transaction(async (tx) => {
+    await transaction(async (tx) => {
       await tx.authToken.create({
         data: {
           tokenHash: hash(token),
@@ -474,7 +478,7 @@ platformApi.post(
       })
       .strict()
       .parse(req.body);
-    const row = await db.$transaction(async (tx) => {
+    const row = await transaction(async (tx) => {
       const row = await tx.coupon.create({ data });
       await audit(tx, actor, 'COUPON_CREATED', undefined, { code: data.code });
       return row;
@@ -692,9 +696,9 @@ export async function processWebhook(raw: Buffer, signature: string, eventId: st
   assert(verifyWebhook(raw, signature, secret), 400, 'Invalid webhook signature.');
   const event = JSON.parse(raw.toString());
   const key = eventId || hash(raw.toString());
-  return db.$transaction(
+  return transaction(
     async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`webhook:${key}`},0))`;
+      await lock(tx, `webhook:${key}`);
       if (await tx.subscriptionEvent.findUnique({ where: { providerEventId: key } }))
         return { duplicate: true };
       const payment = event.payload?.payment?.entity;
@@ -708,7 +712,7 @@ export async function processWebhook(raw: Buffer, signature: string, eventId: st
         // Ignore payments belonging to other products in a shared gateway account.
         if (invoice) {
           tenantId = invoice.tenantId;
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId},0))`;
+          await lock(tx, tenantId);
           assert(
             payment.status === 'captured' &&
               payment.currency === invoice.currency &&
@@ -768,7 +772,7 @@ export async function processWebhook(raw: Buffer, signature: string, eventId: st
         });
         if (initial) {
           tenantId = initial.tenantId;
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId},0))`;
+          await lock(tx, tenantId);
           const p = await tx.subscriptionPayment.findUniqueOrThrow({ where: { id: initial.id } });
           assert(
             typeof refund.id === 'string' && Number.isInteger(refund.amount) && refund.amount > 0,

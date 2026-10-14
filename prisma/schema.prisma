@@ -2,11 +2,11 @@ generator client {
   provider = "prisma-client-js"
 }
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url = env("DATABASE_URL")
 }
 model User {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   email String @unique
   name String
   passwordHash String
@@ -18,7 +18,7 @@ model User {
   tokens AuthToken[]
 }
 model Session {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tokenHash String @unique
   userId String
   tenantId String?
@@ -26,7 +26,7 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 model AuthToken {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tokenHash String @unique
   userId String
   purpose String
@@ -34,7 +34,7 @@ model AuthToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 model Tenant {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   slug String @unique
   name String
   phone String
@@ -49,14 +49,14 @@ model Tenant {
   domains TenantDomain[]
 }
 model TenantDomain {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   hostname String @unique
   verified Boolean @default(false)
   tenant Tenant @relation(fields: [tenantId], references: [id])
 }
 model Membership {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   userId String
   tenantId String
   role String @default("OWNER")
@@ -66,7 +66,7 @@ model Membership {
   @@unique([userId, tenantId])
 }
 model Plan {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   name String @unique
   monthlyPaise Int
   annualPaise Int
@@ -78,7 +78,7 @@ model Plan {
   subscriptions Subscription[]
 }
 model Subscription {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String @unique
   planId String
   status String @default("TRIAL")
@@ -92,7 +92,7 @@ model Subscription {
   plan Plan @relation(fields: [planId], references: [id])
 }
 model SubscriptionInvoice {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   planId String
   interval String
@@ -101,12 +101,12 @@ model SubscriptionInvoice {
   totalPaise Int
   currency String @default("INR")
   status String @default("PENDING")
-  providerOrderId String? @unique
+  providerOrderId String @unique @default(uuid())
   createdAt DateTime @default(now())
   payments SubscriptionPayment[]
 }
 model SubscriptionPayment {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   invoiceId String
   tenantId String
   providerPaymentId String @unique
@@ -117,7 +117,7 @@ model SubscriptionPayment {
   refunds SubscriptionRefund[]
 }
 model SubscriptionRefund {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   paymentId String
   providerRefundId String @unique
   amountPaise Int
@@ -125,26 +125,26 @@ model SubscriptionRefund {
   payment SubscriptionPayment @relation(fields: [paymentId], references: [id])
 }
 model SubscriptionEvent {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String?
-  providerEventId String? @unique
+  providerEventId String @unique @default(uuid())
   kind String
   details Json @default("{}")
   createdAt DateTime @default(now())
 }
 model Coupon {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   code String @unique
   percent Int
   expiresAt DateTime
   active Boolean @default(true)
 }
 model PlatformSettings {
-  id String @id @default("platform")
+  id String @id @default("platform") @map("_id")
   data Json @default("{}")
 }
 model PlatformAudit {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   actorId String
   tenantId String?
   action String
@@ -152,7 +152,7 @@ model PlatformAudit {
   createdAt DateTime @default(now())
 }
 model SupportRequest {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   subject String
   message String
@@ -161,7 +161,7 @@ model SupportRequest {
   createdAt DateTime @default(now())
 }
 model SupportAccessGrant {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   adminUserId String
   consentedBy String
@@ -172,7 +172,7 @@ model SupportAccessGrant {
   createdAt DateTime @default(now())
 }
 model Branch {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   name String
   address String @default("")
@@ -184,7 +184,7 @@ model Branch {
   @@index([tenantId])
 }
 model Doctor {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   branchId String?
   name String
@@ -196,7 +196,7 @@ model Doctor {
   consultationPaise Int @default(50000)
   active Boolean @default(true)
   createdAt DateTime @default(now())
-  branch Branch? @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  branch Branch? @relation(fields: [branchId], references: [id])
   appointments Appointment[]
   sessions TreatmentSession[]
   commissions Commission[]
@@ -204,7 +204,7 @@ model Doctor {
   @@index([tenantId])
 }
 model Patient {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   name String
   phone String
@@ -230,7 +230,7 @@ model Patient {
   @@index([tenantId, name])
 }
 model Appointment {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   doctorId String
@@ -240,14 +240,14 @@ model Appointment {
   reason String @default("Consultation")
   status String @default("SCHEDULED")
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
-  doctor Doctor @relation(fields: [tenantId, doctorId], references: [tenantId, id])
-  branch Branch? @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor Doctor @relation(fields: [doctorId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId, startsAt])
 }
 model ClinicalNote {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   authorId String
@@ -256,23 +256,23 @@ model ClinicalNote {
   diagnosis String @default("")
   advice String @default("")
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model ChartVersion {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   authorId String
   teeth Json
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model CatalogItem {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   name String
   pricePaise Int
@@ -283,19 +283,19 @@ model CatalogItem {
   @@index([tenantId])
 }
 model TreatmentPlan {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   title String
   status String @default("PROPOSED")
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
   items TreatmentItem[]
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model TreatmentItem {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   planId String
   tooth String
@@ -304,13 +304,13 @@ model TreatmentItem {
   plannedSessions Int @default(1)
   status String @default("PLANNED")
   createdAt DateTime @default(now())
-  plan TreatmentPlan @relation(fields: [tenantId, planId], references: [tenantId, id])
+  plan TreatmentPlan @relation(fields: [planId], references: [id])
   sessions TreatmentSession[]
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model TreatmentSession {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   itemId String
   doctorId String
@@ -318,32 +318,34 @@ model TreatmentSession {
   notes String
   feePaise Int
   createdAt DateTime @default(now())
-  item TreatmentItem @relation(fields: [tenantId, itemId], references: [tenantId, id])
-  doctor Doctor @relation(fields: [tenantId, doctorId], references: [tenantId, id])
+  item TreatmentItem @relation(fields: [itemId], references: [id])
+  doctor Doctor @relation(fields: [doctorId], references: [id])
   invoices Invoice[]
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model Invoice {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   sessionId String?
+  sourceKey String @default(uuid())
   description String
   totalPaise Int
   paidPaise Int @default(0)
   dueAt DateTime?
   status String @default("UNPAID")
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
-  session TreatmentSession? @relation(fields: [tenantId, sessionId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
+  session TreatmentSession? @relation(fields: [sessionId], references: [id])
   payments Payment[]
   @@unique([tenantId, id])
-  @@unique([tenantId, sessionId])
+  @@index([tenantId, sessionId])
+  @@unique([tenantId, sourceKey])
   @@index([tenantId])
 }
 model Payment {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   invoiceId String
   amountPaise Int
@@ -351,14 +353,14 @@ model Payment {
   reference String @default("")
   idempotencyKey String
   createdAt DateTime @default(now())
-  invoice Invoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
   commissions Commission[]
   @@unique([tenantId, id])
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId])
 }
 model Commission {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   doctorId String
   paymentId String
@@ -367,14 +369,14 @@ model Commission {
   status String @default("ACCRUED")
   payoutReference String @default("")
   createdAt DateTime @default(now())
-  doctor Doctor @relation(fields: [tenantId, doctorId], references: [tenantId, id])
-  payment Payment @relation(fields: [tenantId, paymentId], references: [tenantId, id])
+  doctor Doctor @relation(fields: [doctorId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id])
   @@unique([tenantId, id])
   @@unique([tenantId, paymentId])
   @@index([tenantId])
 }
 model Document {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   name String
@@ -382,48 +384,48 @@ model Document {
   mime String
   bytes Int
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model Prescription {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   authorId String
   medication String
   instructions String
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model FollowUp {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   title String
   dueAt DateTime
   status String @default("OPEN")
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model Communication {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
   channel String
   message String
   status String @default("RECORDED")
   createdAt DateTime @default(now())
-  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  patient Patient @relation(fields: [patientId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId])
 }
 model ClinicAudit {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   actorId String
   action String
@@ -433,16 +435,17 @@ model ClinicAudit {
   @@index([tenantId])
 }
 model JobRecord {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   key String
   status String
   createdAt DateTime @default(now())
   @@unique([tenantId, key])
+  @@unique([tenantId, id])
   @@index([tenantId])
 }
 model IdempotencyRecord {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
   tenantId String
   key String
   fingerprint String
@@ -453,4 +456,22 @@ model IdempotencyRecord {
   @@unique([tenantId, id])
   @@unique([tenantId, key])
   @@index([tenantId, createdAt])
+}
+
+// A write to this document makes concurrent transactions conflict and retry.
+model TransactionLock {
+  id String @id @map("_id")
+  revision Int @default(0)
+}
+
+model RateBucket {
+  id String @id @map("_id")
+  count Int
+  expiresAt DateTime
+}
+model CronState {
+  id String @id @map("_id")
+  cursor String @default("")
+  owner String @default("")
+  leaseExpiresAt DateTime @default(now())
 }

@@ -1994,7 +1994,7 @@ function PatientDetail({ patient: initialPatient, back, tick, modal, action, wor
           <div className="panel-heading">
             <div>
               <h2>Clinical documents</h2>
-              <p>PDF, JPEG or PNG · up to 10 MB per file</p>
+              <p>PDF, JPEG or PNG · up to 3 MB per file</p>
             </div>
             <label className="primary file-button">
               <Plus size={15} />
@@ -2167,6 +2167,8 @@ function ToothChart({ patientId, tick, action }: any) {
       setDirty(false);
     }
   }, [versions]);
+  // Do not allow edits before the initial chart response can initialize local state.
+  if (!versions) return <DataError error={error} />;
   const rows =
     dentition === 'Permanent'
       ? [

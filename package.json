@@ -5,17 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"tsx watch server/index.ts\" \"vite --host 127.0.0.1\"",
-    "build": "tsc --noEmit && node scripts/build.mjs && esbuild server/index.ts server/jobs.ts --bundle --platform=node --packages=external --format=esm --outdir=dist-server",
+    "build": "prisma generate && tsc --noEmit && node scripts/build.mjs && esbuild server/index.ts server/jobs-runner.ts --bundle --platform=node --packages=external --format=esm --outdir=dist-server",
     "start": "node dist-server/index.js",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
+    "db:generate": "node --import dotenv/config node_modules/prisma/build/index.js generate",
     "db:seed": "tsx prisma/seed.ts",
     "test": "tsx --test tests/*.test.ts",
     "test:integration": "tsx --test tests/integration.ts",
-    "jobs": "tsx server/jobs.ts",
-    "db:local": "node scripts/local-db.mjs"
+    "jobs": "tsx server/jobs-runner.ts",
+    "db:push": "node --import dotenv/config node_modules/prisma/build/index.js db push && tsx scripts/mongo-indexes.ts",
+    "db:local": "node scripts/local-mongo.mjs",
+    "test:mongo": "node scripts/test-mongo.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
     "@fontsource/dm-sans": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",
     "@prisma/client": "6.19.0",
@@ -23,7 +25,6 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
-    "express-rate-limit": "^7.5.0",
     "helmet": "^8.1.0",
     "lucide-react": "^0.468.0",
     "multer": "^2.0.2",
@@ -44,8 +45,8 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.1",
     "concurrently": "^9.1.2",
-    "embedded-postgres": "18.4.0-beta.17",
     "esbuild": "^0.25.2",
+    "mongodb-memory-server": "^11.3.0",
     "prisma": "6.19.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
@@ -54,5 +55,14 @@
   "overrides": {
     "effect": "^3.20.0",
     "deepmerge-ts": "^8.0.0"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "config": {
+    "mongodbMemoryServer": {
+      "version": "8.0.17",
+      "disablePostinstall": true
+    }
   }
 }
