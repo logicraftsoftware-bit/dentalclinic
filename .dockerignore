@@ -1,0 +1,10 @@
+.git
+.env*
+.tools
+.local-db
+node_modules
+storage
+backups
+dist
+dist-server
+tests

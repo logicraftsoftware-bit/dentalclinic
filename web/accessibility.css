@@ -1,0 +1,126 @@
+/* Readable secondary text while retaining the quiet clinic palette. */
+.public-header nav,
+.public-header nav button,
+.hero-copy > p,
+.hero-trust,
+.feature-ribbon span,
+.feature-grid p,
+.pricing-section > p,
+.marketing-cta p,
+.public-footer > p,
+.public-footer > div,
+.auth-story > p,
+.auth-card > p,
+.auth-card form > label,
+.auth-links,
+.auth-links button,
+.prose-page p {
+  color: #6b7e66;
+}
+.feature-grid h3,
+.pricing-card .eyebrow,
+.pricing-card h3,
+.marketing-cta h2,
+.auth-card > h2,
+.prose-page h1,
+.prose-page h3 {
+  color: #52704b;
+}
+.pricing-card p,
+.pricing-card li,
+.pricing-card > small,
+.demo-label,
+.demo-cards small,
+.demo-visit small,
+.hero-floating small {
+  color: #728568;
+}
+.muted,
+.panel-heading p,
+.metric-top > span,
+.metric > small,
+.page-heading p,
+.appointment-person small,
+.appointment-treatment,
+.panel-body,
+.clinical-note p,
+.profile small,
+.workspace-box small,
+.nav-label,
+.details-list dt,
+.branch-row p,
+.patient-summary p,
+.tooth-editor label,
+.legend > span,
+.quick-actions small,
+.followup-row small,
+.app-footer,
+.onboarding p,
+.support-intro p,
+.pricing-card small {
+  color: #687d6d;
+}
+.sidebar nav button,
+.nav-bottom > button:not(.profile) {
+  color: #627b6b;
+}
+.quick-actions strong,
+.quiet-empty strong,
+.quiet-empty p,
+.onboarding h3,
+.setup-steps button,
+.details-list dd,
+.clinical-note small,
+.legend strong,
+.care-note,
+.usage-grid > div > span,
+.usage-grid strong,
+.support-intro h2 {
+  color: #5b785d;
+}
+.schedule-label,
+th {
+  color: #647967;
+}
+.badge.completed,
+.badge.paid,
+.badge.active,
+.badge.accepted {
+  color: #456d55;
+}
+.badge.scheduled,
+.badge.proposed,
+.badge.planned,
+.badge.in_progress {
+  color: #536c85;
+}
+.badge.checked_in,
+.badge.partial,
+.badge.trial,
+.badge.accrued {
+  color: #8b6c32;
+}
+.badge.cancelled,
+.badge.expired,
+.badge.suspended,
+.badge.failed {
+  color: #9b534f;
+}
+.modal-subtitle {
+  white-space: pre-wrap;
+}
+.modal-token {
+  margin: 0 28px 22px;
+}
+.coupon-input {
+  margin-top: 24px;
+  max-width: 310px;
+}
+.workspace-symbol img {
+  width: 29px;
+  height: 29px;
+  object-fit: contain;
+}
+.development-token small {
+  color: #79643d;
+}

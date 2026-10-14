@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.tools/
+.local-db/
+storage/
+dist/
+dist-server/
+*.log
+backups/
+test-results/
+playwright-report/

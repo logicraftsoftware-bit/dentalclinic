@@ -1,0 +1,13 @@
+{
+  email {$ACME_EMAIL}
+}
+{$PRIMARY_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy app:4000
+}
+# Wildcard clinic domains require a DNS-01 ACME provider module. See DEPLOYMENT.md.
+# With the appropriate provider-enabled Caddy image:
+# *.example.com {
+#   tls { dns cloudflare {env.CLOUDFLARE_API_TOKEN} }
+#   reverse_proxy app:4000
+# }

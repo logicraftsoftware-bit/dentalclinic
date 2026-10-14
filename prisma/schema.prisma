@@ -1,0 +1,456 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  name String
+  passwordHash String
+  verified Boolean @default(false)
+  platformAdmin Boolean @default(false)
+  createdAt DateTime @default(now())
+  memberships Membership[]
+  sessions Session[]
+  tokens AuthToken[]
+}
+model Session {
+  id String @id @default(uuid())
+  tokenHash String @unique
+  userId String
+  tenantId String?
+  expiresAt DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model AuthToken {
+  id String @id @default(uuid())
+  tokenHash String @unique
+  userId String
+  purpose String
+  expiresAt DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model Tenant {
+  id String @id @default(uuid())
+  slug String @unique
+  name String
+  phone String
+  ownerEmail String
+  status String @default("ACTIVE")
+  suspensionReason String?
+  onboarding String @default("NEW")
+  createdAt DateTime @default(now())
+  settings Json @default("{}")
+  memberships Membership[]
+  subscription Subscription?
+  domains TenantDomain[]
+}
+model TenantDomain {
+  id String @id @default(uuid())
+  tenantId String
+  hostname String @unique
+  verified Boolean @default(false)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+model Membership {
+  id String @id @default(uuid())
+  userId String
+  tenantId String
+  role String @default("OWNER")
+  active Boolean @default(true)
+  user User @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  @@unique([userId, tenantId])
+}
+model Plan {
+  id String @id @default(uuid())
+  name String @unique
+  monthlyPaise Int
+  annualPaise Int
+  trialDays Int @default(14)
+  graceDays Int @default(3)
+  available Boolean @default(true)
+  limits Json
+  features Json
+  subscriptions Subscription[]
+}
+model Subscription {
+  id String @id @default(uuid())
+  tenantId String @unique
+  planId String
+  status String @default("TRIAL")
+  interval String @default("MONTHLY")
+  startsAt DateTime @default(now())
+  endsAt DateTime
+  cancelAtPeriodEnd Boolean @default(false)
+  overrides Json @default("{}")
+  recurringPaise Int @default(0)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  plan Plan @relation(fields: [planId], references: [id])
+}
+model SubscriptionInvoice {
+  id String @id @default(uuid())
+  tenantId String
+  planId String
+  interval String
+  subtotalPaise Int
+  taxPaise Int
+  totalPaise Int
+  currency String @default("INR")
+  status String @default("PENDING")
+  providerOrderId String? @unique
+  createdAt DateTime @default(now())
+  payments SubscriptionPayment[]
+}
+model SubscriptionPayment {
+  id String @id @default(uuid())
+  invoiceId String
+  tenantId String
+  providerPaymentId String @unique
+  amountPaise Int
+  refundedPaise Int @default(0)
+  createdAt DateTime @default(now())
+  invoice SubscriptionInvoice @relation(fields: [invoiceId], references: [id])
+  refunds SubscriptionRefund[]
+}
+model SubscriptionRefund {
+  id String @id @default(uuid())
+  paymentId String
+  providerRefundId String @unique
+  amountPaise Int
+  createdAt DateTime @default(now())
+  payment SubscriptionPayment @relation(fields: [paymentId], references: [id])
+}
+model SubscriptionEvent {
+  id String @id @default(uuid())
+  tenantId String?
+  providerEventId String? @unique
+  kind String
+  details Json @default("{}")
+  createdAt DateTime @default(now())
+}
+model Coupon {
+  id String @id @default(uuid())
+  code String @unique
+  percent Int
+  expiresAt DateTime
+  active Boolean @default(true)
+}
+model PlatformSettings {
+  id String @id @default("platform")
+  data Json @default("{}")
+}
+model PlatformAudit {
+  id String @id @default(uuid())
+  actorId String
+  tenantId String?
+  action String
+  details Json @default("{}")
+  createdAt DateTime @default(now())
+}
+model SupportRequest {
+  id String @id @default(uuid())
+  tenantId String
+  subject String
+  message String
+  status String @default("OPEN")
+  notes String @default("")
+  createdAt DateTime @default(now())
+}
+model SupportAccessGrant {
+  id String @id @default(uuid())
+  tenantId String
+  adminUserId String
+  consentedBy String
+  reason String
+  patientId String?
+  expiresAt DateTime
+  revoked Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+model Branch {
+  id String @id @default(uuid())
+  tenantId String
+  name String
+  address String @default("")
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  doctors Doctor[]
+  appointments Appointment[]
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model Doctor {
+  id String @id @default(uuid())
+  tenantId String
+  branchId String?
+  name String
+  email String @default("")
+  phone String @default("")
+  specialty String @default("General Dentistry")
+  registrationNumber String @default("")
+  commissionPercent Int @default(0)
+  consultationPaise Int @default(50000)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  branch Branch? @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  appointments Appointment[]
+  sessions TreatmentSession[]
+  commissions Commission[]
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model Patient {
+  id String @id @default(uuid())
+  tenantId String
+  name String
+  phone String
+  email String @default("")
+  dob DateTime?
+  gender String @default("Unspecified")
+  address String @default("")
+  allergies String @default("")
+  medicalHistory String @default("")
+  consent Boolean @default(false)
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  appointments Appointment[]
+  notes ClinicalNote[]
+  charts ChartVersion[]
+  plans TreatmentPlan[]
+  invoices Invoice[]
+  documents Document[]
+  prescriptions Prescription[]
+  followups FollowUp[]
+  communications Communication[]
+  @@unique([tenantId, id])
+  @@index([tenantId, name])
+}
+model Appointment {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  doctorId String
+  branchId String?
+  startsAt DateTime
+  durationMinutes Int @default(30)
+  reason String @default("Consultation")
+  status String @default("SCHEDULED")
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  doctor Doctor @relation(fields: [tenantId, doctorId], references: [tenantId, id])
+  branch Branch? @relation(fields: [tenantId, branchId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@index([tenantId, startsAt])
+}
+model ClinicalNote {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  authorId String
+  complaint String
+  findings String @default("")
+  diagnosis String @default("")
+  advice String @default("")
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model ChartVersion {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  authorId String
+  teeth Json
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model CatalogItem {
+  id String @id @default(uuid())
+  tenantId String
+  name String
+  pricePaise Int
+  sessions Int @default(1)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model TreatmentPlan {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  title String
+  status String @default("PROPOSED")
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  items TreatmentItem[]
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model TreatmentItem {
+  id String @id @default(uuid())
+  tenantId String
+  planId String
+  tooth String
+  name String
+  pricePaise Int
+  plannedSessions Int @default(1)
+  status String @default("PLANNED")
+  createdAt DateTime @default(now())
+  plan TreatmentPlan @relation(fields: [tenantId, planId], references: [tenantId, id])
+  sessions TreatmentSession[]
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model TreatmentSession {
+  id String @id @default(uuid())
+  tenantId String
+  itemId String
+  doctorId String
+  performedAt DateTime @default(now())
+  notes String
+  feePaise Int
+  createdAt DateTime @default(now())
+  item TreatmentItem @relation(fields: [tenantId, itemId], references: [tenantId, id])
+  doctor Doctor @relation(fields: [tenantId, doctorId], references: [tenantId, id])
+  invoices Invoice[]
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model Invoice {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  sessionId String?
+  description String
+  totalPaise Int
+  paidPaise Int @default(0)
+  dueAt DateTime?
+  status String @default("UNPAID")
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  session TreatmentSession? @relation(fields: [tenantId, sessionId], references: [tenantId, id])
+  payments Payment[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, sessionId])
+  @@index([tenantId])
+}
+model Payment {
+  id String @id @default(uuid())
+  tenantId String
+  invoiceId String
+  amountPaise Int
+  method String
+  reference String @default("")
+  idempotencyKey String
+  createdAt DateTime @default(now())
+  invoice Invoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id])
+  commissions Commission[]
+  @@unique([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+}
+model Commission {
+  id String @id @default(uuid())
+  tenantId String
+  doctorId String
+  paymentId String
+  amountPaise Int
+  percent Int
+  status String @default("ACCRUED")
+  payoutReference String @default("")
+  createdAt DateTime @default(now())
+  doctor Doctor @relation(fields: [tenantId, doctorId], references: [tenantId, id])
+  payment Payment @relation(fields: [tenantId, paymentId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@unique([tenantId, paymentId])
+  @@index([tenantId])
+}
+model Document {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  name String
+  storageKey String
+  mime String
+  bytes Int
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model Prescription {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  authorId String
+  medication String
+  instructions String
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model FollowUp {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  title String
+  dueAt DateTime
+  status String @default("OPEN")
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model Communication {
+  id String @id @default(uuid())
+  tenantId String
+  patientId String
+  channel String
+  message String
+  status String @default("RECORDED")
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [tenantId, patientId], references: [tenantId, id])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model ClinicAudit {
+  id String @id @default(uuid())
+  tenantId String
+  actorId String
+  action String
+  recordId String?
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+model JobRecord {
+  id String @id @default(uuid())
+  tenantId String
+  key String
+  status String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+model IdempotencyRecord {
+  id String @id @default(uuid())
+  tenantId String
+  key String
+  fingerprint String
+  status Int
+  body Json
+  headers Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@unique([tenantId, key])
+  @@index([tenantId, createdAt])
+}
