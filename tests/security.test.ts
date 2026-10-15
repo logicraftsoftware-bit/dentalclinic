@@ -82,3 +82,13 @@ test('repository scope overrides malicious query and create tenant IDs', async (
   assert.equal(calls[0].where.tenantId, 'authorized-tenant');
   assert.equal(calls[1].data.tenantId, 'authorized-tenant');
 });
+
+test('database diagnostics classify failures without exposing credentials or queries', async () => {
+  const { databaseDiagnostic } = await import('../server/database-diagnostic.js');
+  const error = { code: 'P2010', meta: { code: 18, message: 'Authentication failed for mongodb+srv://secret-user:secret-password@private.example/db' } };
+  const diagnostic = databaseDiagnostic(error);
+  assert.equal(diagnostic.reason, 'DATABASE_AUTH_FAILED');
+  assert.equal(diagnostic.databaseCode, '18');
+  assert(!JSON.stringify(diagnostic).includes('secret'));
+  assert.equal(databaseDiagnostic({ message: 'Server selection timed out' }).reason, 'DATABASE_CONNECTION_FAILED');
+});

@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { sharedRateLimit } from './rate-limit.js';
 import { runJobs } from './jobs.js';
 import { timingSafeEqual } from 'node:crypto';
+import { databaseDiagnostic } from './database-diagnostic.js';
 import path from 'node:path';
 import { ZodError } from 'zod';
 import { ApiError, db, log, prod } from './core.js';
@@ -30,6 +31,18 @@ app.use(
     },
   }),
 );
+// Health must report the database independently of the shared counter service.
+app.get('/api/health', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    await db.plan.findFirst({ select: { id: true } });
+    res.json({ status: 'ok' });
+  } catch (error) {
+    const diagnostic = databaseDiagnostic(error);
+    log.error(diagnostic, 'Database health check failed');
+    res.status(503).json({ status: 'unavailable', ...diagnostic });
+  }
+});
 app.use(
   '/api',
   sharedRateLimit('api', 60000, 300),
@@ -86,14 +99,6 @@ app.use('/api', (req, res, next) => {
     }
   }
   next();
-});
-app.get('/api/health', async (_req, res) => {
-  try {
-    await db.$runCommandRaw({ ping: 1 });
-    res.json({ status: 'ok' });
-  } catch {
-    res.status(503).json({ status: 'unavailable' });
-  }
 });
 app.get('/api/public/plans', (_req, res, next) =>
   db.plan
@@ -156,7 +161,7 @@ app.use((error: any, _req: any, res: any, _next: any) => {
     res.status(413).json({ error: 'Document must be 3 MB or smaller.' });
     return;
   }
-  log.error({ code: error.code, name: error.name }, 'Request failed');
+  log.error({ ...databaseDiagnostic(error), name: error.name }, 'Request failed');
   res.status(500).json({ error: 'The request could not be completed.' });
 });
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {

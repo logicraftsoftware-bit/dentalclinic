@@ -679,3 +679,13 @@ test('cron respects an active persisted lease and processes a bounded clinic pag
     assert.equal(state.leaseExpiresAt.getTime(), 0);
   } finally { if (oldKey) process.env.RAZORPAY_KEY_ID = oldKey; }
 });
+
+test('health checks do not depend on the shared rate counter', async () => {
+  const previous = db.rateBucket.upsert;
+  (db.rateBucket as any).upsert = async () => { throw new Error('Synthetic counter failure'); };
+  try {
+    const health = await request('/health');
+    assert.equal(health.status, 200);
+    assert.equal(health.data.status, 'ok');
+  } finally { (db.rateBucket as any).upsert = previous; }
+});
