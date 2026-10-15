@@ -134,16 +134,31 @@ test('cross-tenant detail, update, search and exports are denied', async () => {
 });
 test('MongoDB repository rejects cross-clinic relationships and scopes every read', async () => {
   const { TenantStore, transaction, lock } = await import('../server/core.js');
-  await assert.rejects(transaction(async tx => {
-    await lock(tx, a.tenantId);
+  await assert.rejects(
+    transaction(async (tx) => {
+      await lock(tx, a.tenantId);
+      const store = new TenantStore(tx, a.tenantId);
+      await store.create('invoice', {
+        patientId: patientB.id,
+        description: 'Invalid',
+        totalPaise: 100,
+      });
+    }),
+    /Record not found/,
+  );
+  await transaction(async (tx) => {
     const store = new TenantStore(tx, a.tenantId);
-    await store.create('invoice', { patientId: patientB.id, description: 'Invalid', totalPaise: 100 });
-  }), /Record not found/);
-  await transaction(async tx => {
-    const store = new TenantStore(tx, a.tenantId);
-    assert.equal((await store.list('patient', { tenantId: b.tenantId })).every((row: any) => row.tenantId === a.tenantId), true);
+    assert.equal(
+      (await store.list('patient', { tenantId: b.tenantId })).every(
+        (row: any) => row.tenantId === a.tenantId,
+      ),
+      true,
+    );
     await assert.rejects(store.get('patient', patientB.id), /Record not found/);
-    await assert.rejects(store.update('patient', patientA.id, { name: { set: 'Nested write' } }), /Nested writes/);
+    await assert.rejects(
+      store.update('patient', patientA.id, { name: { set: 'Nested write' } }),
+      /Nested writes/,
+    );
   });
 });
 
@@ -631,12 +646,28 @@ test('shared rate counters apply across concurrent requests and cron rejects mis
   const bucket = `test:${randomUUID()}`;
   const { sharedRateLimit } = await import('../server/rate-limit.js');
   const limiter = sharedRateLimit(bucket, 60000, 2);
-  const statuses = await Promise.all([1,2,3,4,5].map(() => new Promise<number>((resolve, reject) => {
-    const res: any = { setHeader() {}, status(code: number) { this.code = code; return this; }, json() { resolve(this.code); } };
-    limiter({ ip: '192.0.2.1', socket: {} } as any, res, (error?: any) => error ? reject(error) : resolve(200));
-  })));
-  assert.equal(statuses.filter(code => code === 200).length, 2);
-  assert.equal(statuses.filter(code => code === 429).length, 3);
+  const statuses = await Promise.all(
+    [1, 2, 3, 4, 5].map(
+      () =>
+        new Promise<number>((resolve, reject) => {
+          const res: any = {
+            setHeader() {},
+            status(code: number) {
+              this.code = code;
+              return this;
+            },
+            json() {
+              resolve(this.code);
+            },
+          };
+          limiter({ ip: '192.0.2.1', socket: {} } as any, res, (error?: any) =>
+            error ? reject(error) : resolve(200),
+          );
+        }),
+    ),
+  );
+  assert.equal(statuses.filter((code) => code === 200).length, 2);
+  assert.equal(statuses.filter((code) => code === 429).length, 3);
   assert.equal((await request('/cron/jobs')).status, 401);
   const counters: any = await db.rateBucket.findMany({ where: { id: { startsWith: bucket } } });
   assert.equal(counters[0].count, 5);
@@ -644,9 +675,24 @@ test('shared rate counters apply across concurrent requests and cron rejects mis
 });
 
 test('MongoDB optional provider identities allow multiple pending invoices and events', async () => {
-  const [first, second] = await Promise.all([1,2].map(() => db.subscriptionInvoice.create({ data: { tenantId: a.tenantId, planId: plan.id, interval: 'MONTHLY', subtotalPaise: 100, taxPaise: 0, totalPaise: 100 } })));
+  const [first, second] = await Promise.all(
+    [1, 2].map(() =>
+      db.subscriptionInvoice.create({
+        data: {
+          tenantId: a.tenantId,
+          planId: plan.id,
+          interval: 'MONTHLY',
+          subtotalPaise: 100,
+          taxPaise: 0,
+          totalPaise: 100,
+        },
+      }),
+    ),
+  );
   assert.notEqual(first.providerOrderId, second.providerOrderId);
-  const events = await Promise.all([1,2].map(() => db.subscriptionEvent.create({ data: { kind: 'TEST_INTERNAL' } })));
+  const events = await Promise.all(
+    [1, 2].map(() => db.subscriptionEvent.create({ data: { kind: 'TEST_INTERNAL' } })),
+  );
   assert.notEqual(events[0].providerEventId, events[1].providerEventId);
 });
 
@@ -660,12 +706,19 @@ test('Vercel document storage refuses an ephemeral filesystem fallback', async (
     const result = await request('/clinic/documents', 'POST', form, b.cookie);
     assert.equal(result.status, 503, JSON.stringify(result.data));
     assert.match(result.data.error, /private storage|S3_BUCKET/);
-  } finally { if (previous === undefined) delete process.env.VERCEL; else process.env.VERCEL = previous; }
+  } finally {
+    if (previous === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = previous;
+  }
 });
 
 test('cron respects an active persisted lease and processes a bounded clinic page', async () => {
   const { runJobs } = await import('../server/jobs.js');
-  await db.cronState.upsert({ where: { id: 'jobs' }, create: { id: 'jobs', leaseExpiresAt: new Date(Date.now() + 60000) }, update: { leaseExpiresAt: new Date(Date.now() + 60000) } });
+  await db.cronState.upsert({
+    where: { id: 'jobs' },
+    create: { id: 'jobs', leaseExpiresAt: new Date(Date.now() + 60000) },
+    update: { leaseExpiresAt: new Date(Date.now() + 60000) },
+  });
   assert.deepEqual(await runJobs(), { skipped: true });
   await db.cronState.update({ where: { id: 'jobs' }, data: { leaseExpiresAt: new Date(0) } });
   const oldKey = process.env.RAZORPAY_KEY_ID;
@@ -675,22 +728,33 @@ test('cron respects an active persisted lease and processes a bounded clinic pag
     assert(typeof result.processed === 'number' && result.processed <= 10);
     const state = await db.cronState.findUniqueOrThrow({ where: { id: 'jobs' } });
     assert.equal(state.leaseExpiresAt.getTime(), 0);
-  } finally { if (oldKey) process.env.RAZORPAY_KEY_ID = oldKey; }
+  } finally {
+    if (oldKey) process.env.RAZORPAY_KEY_ID = oldKey;
+  }
 });
 
 test('health checks do not depend on the shared rate counter', async () => {
   const previous = db.rateBucket.upsert;
-  (db.rateBucket as any).upsert = async () => { throw new Error('Synthetic counter failure'); };
+  (db.rateBucket as any).upsert = async () => {
+    throw new Error('Synthetic counter failure');
+  };
   try {
     const health = await request('/health');
     assert.equal(health.status, 200);
     assert.equal(health.data.status, 'ok');
-  } finally { (db.rateBucket as any).upsert = previous; }
+  } finally {
+    (db.rateBucket as any).upsert = previous;
+  }
 });
 
 test('staff accounts sign in and use their membership without email verification or SMTP', async () => {
   const email = `staff-${randomUUID()}@example.test`;
-  const created = await request('/clinic/staff', 'POST', { name: 'New receptionist', email, role: 'RECEPTIONIST', password }, a.cookie);
+  const created = await request(
+    '/clinic/staff',
+    'POST',
+    { name: 'New receptionist', email, role: 'RECEPTIONIST', password },
+    a.cookie,
+  );
   assert.equal(created.status, 201, JSON.stringify(created.data));
   assert.equal(created.data.developmentToken, undefined);
   const user = await db.user.findUniqueOrThrow({ where: { email } });
@@ -704,54 +768,568 @@ test('staff accounts sign in and use their membership without email verification
 
 let masterSpeciality: any, masterGroup: any, masterCharge: any;
 test('masters create on a clinic, normalize names and reject duplicate or invalid amounts', async () => {
-  const speciality = await request('/clinic/specialities', 'POST', { name: '  Orthodontics  ' }, a.cookie);
+  const speciality = await request(
+    '/clinic/specialities',
+    'POST',
+    { name: '  Orthodontics  ' },
+    a.cookie,
+  );
   assert.equal(speciality.status, 201, JSON.stringify(speciality.data));
   masterSpeciality = speciality.data;
   assert.equal(masterSpeciality.name, 'Orthodontics');
-  assert.equal((await request('/clinic/specialities', 'POST', { name: 'orthodontics' }, a.cookie)).status, 409);
-  const group = await request('/clinic/charge-groups', 'POST', { name: 'Laboratory services' }, a.cookie);
-  assert.equal(group.status, 201, JSON.stringify(group.data)); masterGroup = group.data;
-  const charge = await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'Ceramic crown', pricePaise: 250075, labChargePaise: 50025 }, a.cookie);
-  assert.equal(charge.status, 201, JSON.stringify(charge.data)); masterCharge = charge.data;
-  assert.equal(masterCharge.pricePaise, 250075); assert.equal(masterCharge.labChargePaise, 50025);
-  assert.equal((await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'ceramic crown', pricePaise: 1, labChargePaise: 0 }, a.cookie)).status, 409);
+  assert.equal(
+    (await request('/clinic/specialities', 'POST', { name: 'orthodontics' }, a.cookie)).status,
+    409,
+  );
+  const group = await request(
+    '/clinic/charge-groups',
+    'POST',
+    { name: 'Laboratory services' },
+    a.cookie,
+  );
+  assert.equal(group.status, 201, JSON.stringify(group.data));
+  masterGroup = group.data;
+  const charge = await request(
+    '/clinic/charges',
+    'POST',
+    {
+      chargeGroupId: masterGroup.id,
+      name: 'Ceramic crown',
+      pricePaise: 250075,
+      labChargePaise: 50025,
+    },
+    a.cookie,
+  );
+  assert.equal(charge.status, 201, JSON.stringify(charge.data));
+  masterCharge = charge.data;
+  assert.equal(masterCharge.pricePaise, 250075);
+  assert.equal(masterCharge.labChargePaise, 50025);
+  assert.equal(
+    (
+      await request(
+        '/clinic/charges',
+        'POST',
+        { chargeGroupId: masterGroup.id, name: 'ceramic crown', pricePaise: 1, labChargePaise: 0 },
+        a.cookie,
+      )
+    ).status,
+    409,
+  );
   for (const invalid of [{ pricePaise: -1 }, { labChargePaise: -1 }, { pricePaise: 1.5 }]) {
-    assert.equal((await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'Invalid amount', pricePaise: 100, labChargePaise: 0, ...invalid }, a.cookie)).status, 400);
+    assert.equal(
+      (
+        await request(
+          '/clinic/charges',
+          'POST',
+          {
+            chargeGroupId: masterGroup.id,
+            name: 'Invalid amount',
+            pricePaise: 100,
+            labChargePaise: 0,
+            ...invalid,
+          },
+          a.cookie,
+        )
+      ).status,
+      400,
+    );
   }
-  assert.equal((await request('/clinic/charges', 'GET', undefined, a.cookie)).data.some((row: any) => row.id === masterCharge.id), true);
+  assert.equal(
+    (await request('/clinic/charges', 'GET', undefined, a.cookie)).data.some(
+      (row: any) => row.id === masterCharge.id,
+    ),
+    true,
+  );
 });
 
 test('master references and mutations remain tenant scoped and staff cannot manage them', async () => {
-  for (const [resource, row] of [['specialities', masterSpeciality], ['charge-groups', masterGroup], ['charges', masterCharge]] as const) {
-    assert.equal((await request(`/clinic/${resource}/${row.id}`, 'GET', undefined, b.cookie)).status, 404);
-    assert.equal((await request(`/clinic/${resource}/${row.id}`, 'PATCH', { name: 'Foreign edit' }, b.cookie)).status, 404);
-    assert.equal((await request(`/clinic/${resource}`, 'GET', undefined, b.cookie)).data.some((item: any) => item.id === row.id), false);
+  for (const [resource, row] of [
+    ['specialities', masterSpeciality],
+    ['charge-groups', masterGroup],
+    ['charges', masterCharge],
+  ] as const) {
+    assert.equal(
+      (await request(`/clinic/${resource}/${row.id}`, 'GET', undefined, b.cookie)).status,
+      404,
+    );
+    assert.equal(
+      (await request(`/clinic/${resource}/${row.id}`, 'PATCH', { name: 'Foreign edit' }, b.cookie))
+        .status,
+      404,
+    );
+    assert.equal(
+      (await request(`/clinic/${resource}`, 'GET', undefined, b.cookie)).data.some(
+        (item: any) => item.id === row.id,
+      ),
+      false,
+    );
   }
-  assert.equal((await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'Foreign group', pricePaise: 100 }, b.cookie)).status, 404);
-  assert.equal((await request('/clinic/doctors', 'POST', { name: 'Foreign speciality', specialityId: masterSpeciality.id }, b.cookie)).status, 404);
-  const member = await db.membership.findFirstOrThrow({ where: { tenantId: a.tenantId, role: 'RECEPTIONIST' }, include: { user: true } });
-  const cookie = (await request('/auth/login', 'POST', { email: member.user.email, password })).cookie;
+  assert.equal(
+    (
+      await request(
+        '/clinic/charges',
+        'POST',
+        { chargeGroupId: masterGroup.id, name: 'Foreign group', pricePaise: 100 },
+        b.cookie,
+      )
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(
+        '/clinic/doctors',
+        'POST',
+        { name: 'Foreign speciality', specialityId: masterSpeciality.id },
+        b.cookie,
+      )
+    ).status,
+    404,
+  );
+  const member = await db.membership.findFirstOrThrow({
+    where: { tenantId: a.tenantId, role: 'RECEPTIONIST' },
+    include: { user: true },
+  });
+  const cookie = (await request('/auth/login', 'POST', { email: member.user.email, password }))
+    .cookie;
   assert.equal((await request('/clinic/charges', 'GET', undefined, cookie)).status, 200);
-  assert.equal((await request('/clinic/specialities', 'POST', { name: 'Unauthorized master' }, cookie)).status, 403);
-  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: false }, cookie)).status, 403);
+  assert.equal(
+    (await request('/clinic/specialities', 'POST', { name: 'Unauthorized master' }, cookie)).status,
+    403,
+  );
+  assert.equal(
+    (await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: false }, cookie))
+      .status,
+    403,
+  );
 });
 
 test('master edits, dependencies and deactivation preserve treatment price and lab snapshots', async () => {
-  assert.equal((await request(`/clinic/doctors/${doctorA.id}`, 'PATCH', { specialityId: masterSpeciality.id }, a.cookie)).status, 200);
-  assert.equal((await request(`/clinic/specialities/${masterSpeciality.id}`, 'PATCH', { active: false }, a.cookie)).status, 409);
-  assert.equal((await request(`/clinic/specialities/${masterSpeciality.id}`, 'PATCH', { name: 'Orthodontic care' }, a.cookie)).status, 200);
-  assert.equal((await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: false }, a.cookie)).status, 409);
-  const plan = (await request('/clinic/plans', 'POST', { patientId: patientA.id, title: 'Master charge snapshots' }, a.cookie)).data;
-  const item = await request('/clinic/items', 'POST', { planId: plan.id, tooth: '26', name: masterCharge.name, pricePaise: masterCharge.pricePaise, labChargePaise: masterCharge.labChargePaise, catalogItemId: masterCharge.id, plannedSessions: 1 }, a.cookie);
+  assert.equal(
+    (
+      await request(
+        `/clinic/doctors/${doctorA.id}`,
+        'PATCH',
+        { specialityId: masterSpeciality.id },
+        a.cookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(
+        `/clinic/specialities/${masterSpeciality.id}`,
+        'PATCH',
+        { active: false },
+        a.cookie,
+      )
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await request(
+        `/clinic/specialities/${masterSpeciality.id}`,
+        'PATCH',
+        { name: 'Orthodontic care' },
+        a.cookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: false }, a.cookie))
+      .status,
+    409,
+  );
+  const plan = (
+    await request(
+      '/clinic/plans',
+      'POST',
+      { patientId: patientA.id, title: 'Master charge snapshots' },
+      a.cookie,
+    )
+  ).data;
+  const item = await request(
+    '/clinic/items',
+    'POST',
+    {
+      planId: plan.id,
+      tooth: '26',
+      name: masterCharge.name,
+      pricePaise: masterCharge.pricePaise,
+      labChargePaise: masterCharge.labChargePaise,
+      catalogItemId: masterCharge.id,
+      plannedSessions: 1,
+    },
+    a.cookie,
+  );
   assert.equal(item.status, 201, JSON.stringify(item.data));
-  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { name: 'Updated ceramic crown', pricePaise: 999900, labChargePaise: 123400 }, a.cookie)).status, 200);
+  assert.equal(
+    (
+      await request(
+        `/clinic/charges/${masterCharge.id}`,
+        'PATCH',
+        { name: 'Updated ceramic crown', pricePaise: 999900, labChargePaise: 123400 },
+        a.cookie,
+      )
+    ).status,
+    200,
+  );
   const saved = (await request(`/clinic/items/${item.data.id}`, 'GET', undefined, a.cookie)).data;
-  assert.equal(saved.name, 'Ceramic crown'); assert.equal(saved.pricePaise, 250075); assert.equal(saved.labChargePaise, 50025);
-  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: false }, a.cookie)).status, 200);
-  assert.equal((await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: false }, a.cookie)).status, 200);
-  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: true }, a.cookie)).status, 409);
-  assert.equal((await request('/clinic/charges?active=true', 'GET', undefined, a.cookie)).data.some((row: any) => row.id === masterCharge.id), false);
-  assert.equal((await request('/clinic/items', 'POST', { planId: plan.id, tooth: '27', name: 'Inactive charge', catalogItemId: masterCharge.id, pricePaise: 100 }, a.cookie)).status, 409);
-  assert.equal((await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: true }, a.cookie)).status, 200);
-  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: true }, a.cookie)).status, 200);
+  assert.equal(saved.name, 'Ceramic crown');
+  assert.equal(saved.pricePaise, 250075);
+  assert.equal(saved.labChargePaise, 50025);
+  assert.equal(
+    (await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: false }, a.cookie))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: false }, a.cookie))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: true }, a.cookie))
+      .status,
+    409,
+  );
+  assert.equal(
+    (await request('/clinic/charges?active=true', 'GET', undefined, a.cookie)).data.some(
+      (row: any) => row.id === masterCharge.id,
+    ),
+    false,
+  );
+  assert.equal(
+    (
+      await request(
+        '/clinic/items',
+        'POST',
+        {
+          planId: plan.id,
+          tooth: '27',
+          name: 'Inactive charge',
+          catalogItemId: masterCharge.id,
+          pricePaise: 100,
+        },
+        a.cookie,
+      )
+    ).status,
+    409,
+  );
+  assert.equal(
+    (await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: true }, a.cookie))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: true }, a.cookie))
+      .status,
+    200,
+  );
+});
+
+test('branch admins delegate staff safely and branch/doctor panels isolate records', async () => {
+  const c = await register('Branch permissions clinic');
+  const enterprise = await db.plan.findUniqueOrThrow({ where: { name: 'Enterprise' } });
+  await db.subscription.update({
+    where: { tenantId: c.tenantId },
+    data: { planId: enterprise.id },
+  });
+  async function create(path: string, body: any, cookie = c.cookie) {
+    const result = await request('/clinic/' + path, 'POST', body, cookie);
+    assert.equal(result.status, 201, JSON.stringify(result.data));
+    return result.data;
+  }
+  const north = await create('branches', { name: 'North branch' });
+  const south = await create('branches', { name: 'South branch' });
+  const d1 = await create('doctors', { name: 'North doctor', branchId: north.id });
+  const d2 = await create('doctors', { name: 'South doctor', branchId: south.id });
+  const northPatient = await create('patients', {
+    name: 'North patient',
+    phone: '9000000031',
+    branchId: north.id,
+    doctorId: d1.id,
+  });
+  const southPatient = await create('patients', {
+    name: 'South patient',
+    phone: '9000000032',
+    branchId: south.id,
+    doctorId: d2.id,
+  });
+  const unassigned = await create('patients', { name: 'Legacy unassigned', phone: '9000000033' });
+  const northPlan = await create('plans', { patientId: northPatient.id, title: 'North treatment' });
+  const southPlan = await create('plans', { patientId: southPatient.id, title: 'South treatment' });
+  const southInvoice = await create('invoices', {
+    patientId: southPatient.id,
+    description: 'South invoice',
+    totalPaise: 10000,
+  });
+  async function staff(role: string, branchId: string, doctorId?: string, cookie = c.cookie) {
+    const email = `${randomUUID()}@example.test`;
+    const membership = await create(
+      'staff',
+      { name: role, email, password, role, branchId, ...(doctorId ? { doctorId } : {}) },
+      cookie,
+    );
+    const login = await request('/auth/login', 'POST', { email, password });
+    assert.equal(login.status, 200);
+    return { cookie: login.cookie, membership, email };
+  }
+  assert.equal(
+    (
+      await request(
+        '/clinic/staff',
+        'POST',
+        {
+          name: 'Missing branch',
+          email: `${randomUUID()}@example.test`,
+          password,
+          role: 'BRANCH_ADMIN',
+        },
+        c.cookie,
+      )
+    ).status,
+    400,
+  );
+  const admin = await staff('BRANCH_ADMIN', north.id);
+  const receptionist = await staff('RECEPTIONIST', north.id, undefined, admin.cookie);
+  const doctor = await staff('DOCTOR', north.id, d1.id, admin.cookie);
+  const workspace = await request('/clinic/workspace', 'GET', undefined, admin.cookie);
+  assert.equal(workspace.data.role, 'BRANCH_ADMIN');
+  assert.equal(workspace.data.branchId, north.id);
+  assert.equal(workspace.data.capabilities.includes('staff'), true);
+  assert.equal(workspace.data.capabilities.includes('settings'), false);
+  for (const cookie of [admin.cookie, receptionist.cookie, doctor.cookie]) {
+    const patients = await request('/clinic/patients', 'GET', undefined, cookie);
+    assert.deepEqual(
+      patients.data.map((p: any) => p.id),
+      [northPatient.id],
+    );
+    for (const hidden of [southPatient, unassigned]) {
+      assert.equal(
+        (await request(`/clinic/patients/${hidden.id}`, 'GET', undefined, cookie)).status,
+        404,
+      );
+      assert.equal(
+        (await request(`/clinic/patients/${hidden.id}`, 'PATCH', { name: 'Forbidden' }, cookie))
+          .status,
+        404,
+      );
+    }
+    assert.equal(
+      (await request('/clinic/settings', 'PATCH', { name: 'Hijack' }, cookie)).status,
+      403,
+    );
+    assert.equal((await request('/clinic/export', 'GET', undefined, cookie)).status, 403);
+    assert.equal(
+      (
+        await request(
+          '/clinic/appointments',
+          'POST',
+          {
+            patientId: southPatient.id,
+            doctorId: d1.id,
+            branchId: north.id,
+            startsAt: '2031-01-01T10:00:00Z',
+          },
+          cookie,
+        )
+      ).status,
+      404,
+    );
+  }
+  assert.equal(
+    (await request(`/clinic/plans/${southPlan.id}`, 'GET', undefined, doctor.cookie)).status,
+    404,
+  );
+  assert.equal(
+    (await request(`/clinic/plans/${northPlan.id}`, 'GET', undefined, doctor.cookie)).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/clinic/invoices/${southInvoice.id}`, 'GET', undefined, admin.cookie)).status,
+    404,
+  );
+  assert.equal((await request('/clinic/invoices', 'GET', undefined, doctor.cookie)).status, 403);
+  assert.equal(
+    (
+      await request(
+        '/clinic/notes',
+        'POST',
+        { patientId: northPatient.id, complaint: 'Reception cannot write clinical notes' },
+        receptionist.cookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(
+        '/clinic/staff',
+        'POST',
+        { name: 'Escalation', email: `${randomUUID()}@example.test`, password, role: 'MANAGER' },
+        admin.cookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(
+        `/clinic/staff/${receptionist.membership.id}`,
+        'PATCH',
+        { role: 'BRANCH_ADMIN' },
+        admin.cookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(
+        `/clinic/staff/${receptionist.membership.id}`,
+        'PATCH',
+        { branchId: south.id },
+        admin.cookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal((await request('/clinic/staff', 'GET', undefined, receptionist.cookie)).status, 403);
+  assert.equal(
+    (
+      await request(
+        '/clinic/staff',
+        'POST',
+        {
+          name: 'Foreign doctor',
+          email: `${randomUUID()}@example.test`,
+          password,
+          role: 'DOCTOR',
+          branchId: north.id,
+          doctorId: d2.id,
+        },
+        admin.cookie,
+      )
+    ).status,
+    404,
+  );
+  const auto = await create(
+    'patients',
+    { name: 'Reception new patient', phone: '9000000034' },
+    receptionist.cookie,
+  );
+  assert.equal(auto.branchId, north.id);
+  assert.equal(
+    (await request(`/clinic/patients/${auto.id}`, 'GET', undefined, doctor.cookie)).status,
+    404,
+  );
+  const appointment = await create(
+    'appointments',
+    { patientId: auto.id, doctorId: d1.id, startsAt: '2031-01-01T12:00:00Z' },
+    receptionist.cookie,
+  );
+  assert.equal(appointment.branchId, north.id);
+  assert.equal(
+    (await request(`/clinic/patients/${auto.id}`, 'GET', undefined, doctor.cookie)).status,
+    200,
+  );
+  const coveringDoctor = await create('doctors', {
+    name: 'Covering North doctor',
+    branchId: north.id,
+  });
+  const item = await create('items', {
+    planId: northPlan.id,
+    tooth: '26',
+    name: 'Shared care session',
+    pricePaise: 10000,
+    plannedSessions: 1,
+  });
+  assert.equal(
+    (await request(`/clinic/plans/${northPlan.id}`, 'PATCH', { status: 'ACCEPTED' }, c.cookie))
+      .status,
+    200,
+  );
+  await create('sessions', {
+    itemId: item.id,
+    doctorId: coveringDoctor.id,
+    notes: 'Completed by covering clinician',
+    feePaise: 10000,
+  });
+  assert.equal(
+    (
+      await request(
+        '/clinic/sessions',
+        'POST',
+        {
+          itemId: item.id,
+          doctorId: d1.id,
+          notes: 'Cannot exceed shared treatment sessions',
+          feePaise: 10000,
+        },
+        doctor.cookie,
+      )
+    ).status,
+    409,
+  );
+  const assigned = await request(
+    `/clinic/patients/${unassigned.id}`,
+    'PATCH',
+    { doctorId: d1.id },
+    c.cookie,
+  );
+  assert.equal(assigned.status, 200);
+  assert.equal(assigned.data.branchId, north.id);
+  assert.equal(
+    (await request(`/clinic/patients/${unassigned.id}`, 'GET', undefined, doctor.cookie)).status,
+    200,
+  );
+  const floating = await create('doctors', { name: 'Initially unassigned clinician' });
+  const floatingEmail = `${randomUUID()}@example.test`;
+  await create('staff', {
+    name: 'Floating doctor',
+    email: floatingEmail,
+    password,
+    role: 'DOCTOR',
+    doctorId: floating.id,
+  });
+  const floatingLogin = await request('/auth/login', 'POST', { email: floatingEmail, password });
+  assert.equal(
+    (await request('/clinic/workspace', 'GET', undefined, floatingLogin.cookie)).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/clinic/doctors/${floating.id}`, 'PATCH', { branchId: north.id }, c.cookie))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await request('/clinic/workspace', 'GET', undefined, floatingLogin.cookie)).status,
+    403,
+  );
+  const staffRows = (await request('/clinic/staff', 'GET', undefined, admin.cookie)).data;
+  assert.equal(
+    staffRows.every(
+      (s: any) => s.branchId === north.id && ['DOCTOR', 'RECEPTIONIST'].includes(s.role),
+    ),
+    true,
+  );
+  assert.equal(
+    (
+      await request(
+        `/clinic/staff/${receptionist.membership.id}`,
+        'PATCH',
+        { active: false },
+        admin.cookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request('/clinic/patients', 'GET', undefined, receptionist.cookie)).status,
+    401,
+  );
 });

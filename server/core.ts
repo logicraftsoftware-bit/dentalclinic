@@ -8,24 +8,36 @@ import { z } from 'zod';
 const globalDb = globalThis as unknown as { dentaflowDb?: PrismaClient };
 function databaseOptions() {
   const value = process.env.DATABASE_URL;
-  if (!value || !/^mongodb(?:\+srv)?:\/\//.test(value)) throw new Error('Set DATABASE_URL to a MongoDB replica-set connection string.');
+  if (!value || !/^mongodb(?:\+srv)?:\/\//.test(value))
+    throw new Error('Set DATABASE_URL to a MongoDB replica-set connection string.');
   const uri = new URL(value);
   if (!uri.searchParams.has('maxPoolSize')) uri.searchParams.set('maxPoolSize', '10');
-  if (!uri.searchParams.has('serverSelectionTimeoutMS')) uri.searchParams.set('serverSelectionTimeoutMS', '8000');
+  if (!uri.searchParams.has('serverSelectionTimeoutMS'))
+    uri.searchParams.set('serverSelectionTimeoutMS', '8000');
   return { datasources: { db: { url: uri.toString() } } };
 }
 export const db = globalDb.dentaflowDb ?? new PrismaClient(databaseOptions());
 globalDb.dentaflowDb = db;
 export async function lock(tx: Prisma.TransactionClient, key: string) {
-  await tx.transactionLock.upsert({ where: { id: key }, create: { id: key, revision: 1 }, update: { revision: { increment: 1 } } });
+  await tx.transactionLock.upsert({
+    where: { id: key },
+    create: { id: key, revision: 1 },
+    update: { revision: { increment: 1 } },
+  });
 }
-export async function transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>, options: { maxWait?: number; timeout?: number } = {}): Promise<T> {
+export async function transaction<T>(
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  options: { maxWait?: number; timeout?: number } = {},
+): Promise<T> {
   for (let attempt = 0; ; attempt++) {
-    try { return await db.$transaction(fn, { maxWait: 15000, timeout: 20000, ...options }); }
-    catch (error: any) {
-      const conflict = error.code === 'P2034' || (error.code === 'P2002' && String(error.meta?.modelName) === 'TransactionLock');
+    try {
+      return await db.$transaction(fn, { maxWait: 15000, timeout: 20000, ...options });
+    } catch (error: any) {
+      const conflict =
+        error.code === 'P2034' ||
+        (error.code === 'P2002' && String(error.meta?.modelName) === 'TransactionLock');
       if (!conflict || attempt >= 5) throw error;
-      await new Promise(resolve => setTimeout(resolve, 25 * 2 ** attempt + Math.random() * 30));
+      await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** attempt + Math.random() * 30));
     }
   }
 }
@@ -77,6 +89,19 @@ export async function authenticate(req: Request): Promise<Actor> {
 export function permission(role: string, capability: string) {
   if (role === 'OWNER' || role === 'MANAGER') return true;
   const grants: Record<string, string[]> = {
+    BRANCH_ADMIN: [
+      'dashboard',
+      'patients',
+      'appointments',
+      'billing',
+      'clinical',
+      'documents',
+      'catalog',
+      'reports',
+      'commissions',
+      'staff',
+      'doctors',
+    ],
     DOCTOR: ['dashboard', 'patients', 'appointments', 'clinical', 'documents', 'catalog'],
     RECEPTIONIST: ['dashboard', 'patients', 'appointments', 'billing', 'catalog'],
     ACCOUNTANT: ['dashboard', 'billing', 'reports', 'commissions'],
@@ -144,55 +169,196 @@ export class TenantStore {
   constructor(
     private tx: Prisma.TransactionClient,
     readonly tenantId: string,
+    readonly scope: {
+      branchId?: string | null;
+      doctorId?: string | null;
+      role?: string;
+      userId?: string;
+    } = {},
   ) {}
+  private async filter(name: OwnedModel, where: Record<string, unknown>) {
+    const { branchId, doctorId } = this.scope;
+    let restriction: any = {};
+    if (branchId || doctorId) {
+      const ids = async (model: OwnedModel, condition: any) =>
+        (
+          await this.model(model).findMany({
+            where: { tenantId: this.tenantId, ...condition },
+            select: { id: true },
+          })
+        ).map((r: any) => r.id);
+      const patientWhere: any = branchId ? { branchId } : {};
+      if (doctorId) {
+        const appointments = await this.model('appointment').findMany({
+          where: { tenantId: this.tenantId, doctorId },
+          select: { patientId: true },
+        });
+        patientWhere.OR = [{ doctorId }, { id: { in: appointments.map((a: any) => a.patientId) } }];
+      }
+      if (name === 'branch') restriction = branchId ? { id: branchId } : {};
+      else if (name === 'doctor') restriction = doctorId ? { id: doctorId } : { branchId };
+      else if (name === 'patient') restriction = patientWhere;
+      else if (name === 'appointment')
+        restriction = {
+          ...(branchId ? { branchId } : {}),
+          ...(doctorId ? { doctorId } : {}),
+          patientId: { in: await ids('patient', patientWhere) },
+        };
+      else if (
+        [
+          'clinicalNote',
+          'chartVersion',
+          'treatmentPlan',
+          'invoice',
+          'document',
+          'prescription',
+          'followUp',
+          'communication',
+          'treatmentItem',
+          'treatmentSession',
+          'payment',
+          'commission',
+        ].includes(name)
+      ) {
+        const patients = await ids('patient', patientWhere);
+        restriction = { patientId: { in: patients } };
+        if (['treatmentItem', 'treatmentSession'].includes(name)) {
+          const plans = await ids('treatmentPlan', { patientId: { in: patients } });
+          restriction =
+            name === 'treatmentItem'
+              ? { planId: { in: plans } }
+              : { itemId: { in: await ids('treatmentItem', { planId: { in: plans } }) } };
+        }
+        if (['payment', 'commission'].includes(name)) {
+          const invoices = await ids('invoice', { patientId: { in: patients } });
+          restriction =
+            name === 'payment'
+              ? { invoiceId: { in: invoices } }
+              : { paymentId: { in: await ids('payment', { invoiceId: { in: invoices } }) } };
+        }
+      }
+    }
+    return { tenantId: this.tenantId, AND: [{ ...where, tenantId: this.tenantId }, restriction] };
+  }
+  private scopedData(name: OwnedModel, data: Record<string, unknown>, creating = false) {
+    const result = { ...data };
+    if (this.scope.branchId && ['patient', 'doctor', 'appointment'].includes(name)) {
+      assert(
+        !data.branchId || data.branchId === this.scope.branchId,
+        403,
+        'Choose a record in your assigned branch.',
+      );
+      result.branchId = this.scope.branchId;
+    }
+    if (this.scope.doctorId && ['patient', 'appointment', 'treatmentSession'].includes(name)) {
+      assert(
+        !data.doctorId || data.doctorId === this.scope.doctorId,
+        403,
+        'Choose your assigned doctor profile.',
+      );
+      if (creating || name !== 'patient' || data.doctorId !== undefined)
+        result.doctorId = this.scope.doctorId;
+    }
+    return result;
+  }
   private model(name: OwnedModel): any {
     assert(ownedModels.includes(name), 500, 'Unknown repository');
     return (this.tx as any)[name];
   }
-  list(
+  async list(
     name: OwnedModel,
     where: Record<string, unknown> = {},
     options: Record<string, unknown> = {},
   ) {
-    return this.model(name).findMany({ ...options, where: { ...where, tenantId: this.tenantId } });
+    return this.model(name).findMany({ ...options, where: await this.filter(name, where) });
   }
-  count(name: OwnedModel, where: Record<string, unknown> = {}) {
+  async documentBytes() {
+    const result = await this.tx.document.aggregate({
+      where: { tenantId: this.tenantId },
+      _sum: { bytes: true },
+    });
+    return result._sum.bytes || 0;
+  }
+  totalCount(name: OwnedModel, where: Record<string, unknown> = {}) {
     return this.model(name).count({ where: { ...where, tenantId: this.tenantId } });
+  }
+  async count(name: OwnedModel, where: Record<string, unknown> = {}) {
+    return this.model(name).count({ where: await this.filter(name, where) });
   }
   async get(name: OwnedModel, recordId: string) {
     const row = await this.model(name).findFirst({
-      where: { id: recordId, tenantId: this.tenantId },
+      where: await this.filter(name, { id: recordId }),
     });
     assert(row, 404, 'Record not found in your clinic.');
     return row;
   }
   private async validateReferences(name: OwnedModel, data: Record<string, unknown>) {
     const references: Partial<Record<OwnedModel, Record<string, OwnedModel>>> = {
-      doctor: { branchId: 'branch', specialityId: 'speciality' }, appointment: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
-      clinicalNote: { patientId: 'patient' }, chartVersion: { patientId: 'patient' }, treatmentPlan: { patientId: 'patient' },
-      treatmentItem: { planId: 'treatmentPlan', catalogItemId: 'catalogItem' }, treatmentSession: { itemId: 'treatmentItem', doctorId: 'doctor' },
+      patient: { branchId: 'branch', doctorId: 'doctor' },
+      doctor: { branchId: 'branch', specialityId: 'speciality' },
+      appointment: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
+      clinicalNote: { patientId: 'patient' },
+      chartVersion: { patientId: 'patient' },
+      treatmentPlan: { patientId: 'patient' },
+      treatmentItem: { planId: 'treatmentPlan', catalogItemId: 'catalogItem' },
+      treatmentSession: { itemId: 'treatmentItem', doctorId: 'doctor' },
       catalogItem: { chargeGroupId: 'chargeGroup' },
-      invoice: { patientId: 'patient', sessionId: 'treatmentSession' }, payment: { invoiceId: 'invoice' },
-      commission: { doctorId: 'doctor', paymentId: 'payment' }, document: { patientId: 'patient' },
-      prescription: { patientId: 'patient' }, followUp: { patientId: 'patient' }, communication: { patientId: 'patient' },
+      invoice: { patientId: 'patient', sessionId: 'treatmentSession' },
+      payment: { invoiceId: 'invoice' },
+      commission: { doctorId: 'doctor', paymentId: 'payment' },
+      document: { patientId: 'patient' },
+      prescription: { patientId: 'patient' },
+      followUp: { patientId: 'patient' },
+      communication: { patientId: 'patient' },
     };
     for (const [field, model] of Object.entries(references[name] || {})) {
       const value = data[field];
-      if (value != null) { assert(typeof value === 'string', 400, 'Invalid related record.'); await this.get(model, value); }
+      if (value != null) {
+        assert(typeof value === 'string', 400, 'Invalid related record.');
+        await this.get(model, value);
+      }
+    }
+    if (name === 'patient' && data.doctorId) {
+      const doctor = await this.get('doctor', data.doctorId as string);
+      assert(
+        !data.branchId || !doctor.branchId || data.branchId === doctor.branchId,
+        400,
+        'Assigned doctor must belong to the patient branch.',
+      );
+      if (!data.branchId && doctor.branchId) data.branchId = doctor.branchId;
+    }
+    if (name === 'appointment' && data.patientId) {
+      const patient = await this.get('patient', data.patientId as string);
+      assert(
+        !patient.branchId || patient.branchId === data.branchId,
+        400,
+        'Appointment must belong to the patient branch.',
+      );
     }
     for (const [field, value] of Object.entries(data)) {
-      const jsonField = (name === 'chartVersion' && field === 'teeth') || (name === 'idempotencyRecord' && ['body', 'headers'].includes(field));
-      assert(value === null || typeof value !== 'object' || value instanceof Date || jsonField, 400, 'Nested writes are not supported.');
+      const jsonField =
+        (name === 'chartVersion' && field === 'teeth') ||
+        (name === 'idempotencyRecord' && ['body', 'headers'].includes(field));
+      assert(
+        value === null || typeof value !== 'object' || value instanceof Date || jsonField,
+        400,
+        'Nested writes are not supported.',
+      );
     }
   }
   async create(name: OwnedModel, data: Record<string, unknown>) {
+    data = this.scopedData(name, data, true);
     await this.validateReferences(name, data);
     return this.model(name).create({ data: { ...data, tenantId: this.tenantId } });
   }
   async update(name: OwnedModel, recordId: string, data: Record<string, unknown>) {
-    await this.get(name, recordId);
+    const existing = await this.get(name, recordId);
     const { id: _id, tenantId: _tenant, ...safe } = data;
-    await this.validateReferences(name, safe);
+    if (name === 'patient' && safe.doctorId && safe.branchId === undefined && !existing.branchId) {
+      safe.branchId = (await this.get('doctor', safe.doctorId as string)).branchId || null;
+    }
+    Object.assign(safe, this.scopedData(name, safe));
+    await this.validateReferences(name, { ...existing, ...safe });
     return this.model(name).update({
       where: { tenantId_id: { tenantId: this.tenantId, id: recordId } },
       data: safe,
@@ -259,7 +425,39 @@ export async function clinic<T>(
           402,
           'Clinic access is paused. The owner can still manage subscription and support.',
         );
-      return fn({ store: new TenantStore(tx, tenantId), tenant, subscription, membership, tx });
+      if (membership.branchId) {
+        assert(
+          await tx.branch.findFirst({ where: { id: membership.branchId, tenantId, active: true } }),
+          403,
+          'Your assigned branch is inactive. Contact the clinic owner.',
+        );
+      }
+      if (membership.role === 'BRANCH_ADMIN')
+        assert(membership.branchId, 403, 'The owner must assign a branch.');
+      if (membership.role === 'DOCTOR') {
+        const profile = membership.doctorId
+          ? await tx.doctor.findFirst({
+              where: { id: membership.doctorId, tenantId, active: true },
+            })
+          : null;
+        assert(
+          profile && (profile.branchId || null) === (membership.branchId || null),
+          403,
+          'The owner must assign an active doctor profile in the correct branch.',
+        );
+      }
+      return fn({
+        store: new TenantStore(tx, tenantId, {
+          branchId: membership.branchId,
+          doctorId: membership.role === 'DOCTOR' ? membership.doctorId : null,
+          userId: actor.userId,
+          role: membership.role,
+        }),
+        tenant,
+        subscription,
+        membership,
+        tx,
+      });
     },
     { maxWait: 15000, timeout: 20000 },
   );

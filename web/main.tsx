@@ -73,6 +73,31 @@ const clinicNav = [
   ['masters', 'Masters', ClipboardList],
   ['reports', 'Reports', TrendingUp],
 ] as const;
+const screenCaps: Record<string, string> = {
+  dashboard: 'dashboard',
+  patients: 'patients',
+  appointments: 'appointments',
+  treatments: 'clinical',
+  billing: 'billing',
+  doctors: 'doctors',
+  team: 'staff',
+  masters: 'catalog',
+  reports: 'reports',
+  settings: 'settings',
+  subscription: 'settings',
+  support: 'settings',
+};
+function can(workspace: any, capability: string) {
+  return (
+    workspace?.capabilities?.includes(capability) ?? ['OWNER', 'MANAGER'].includes(workspace?.role)
+  );
+}
+const panelNames: Record<string, string> = {
+  BRANCH_ADMIN: 'Branch admin panel',
+  RECEPTIONIST: 'Receptionist panel',
+  DOCTOR: 'Doctor panel',
+  ACCOUNTANT: 'Accountant panel',
+};
 const adminNav = [
   ['platform', 'Platform overview', LayoutDashboard],
   ['clinics', 'Clinics', Building2],
@@ -216,6 +241,7 @@ function App() {
         .catch((e) => setError(e.message));
   }, [me, tick]);
   const navigate = (s: string) => {
+    if (mode === 'clinic' && screenCaps[s] && !can(workspace, screenCaps[s])) return;
     setScreen(s);
     setPatient(null);
     setSearch('');
@@ -282,7 +308,10 @@ function App() {
             </div>
             <p className="nav-label">{mode === 'admin' ? 'PLATFORM' : 'CLINIC WORKSPACE'}</p>
             <nav>
-              {(mode === 'admin' ? adminNav : clinicNav).map(([key, label, Icon]) => (
+              {(mode === 'admin'
+                ? adminNav
+                : clinicNav.filter(([key]) => can(workspace, screenCaps[key]))
+              ).map(([key, label, Icon]) => (
                 <button
                   key={key}
                   className={screen === key ? 'active' : ''}
@@ -296,7 +325,7 @@ function App() {
             </nav>
             <div className="nav-bottom">
               <p className="nav-label">MANAGE</p>
-              {mode === 'clinic' && (
+              {mode === 'clinic' && can(workspace, 'settings') && (
                 <>
                   <button
                     className={screen === 'subscription' ? 'active' : ''}
@@ -314,13 +343,15 @@ function App() {
                   </button>
                 </>
               )}
-              <button
-                className={screen === 'settings' ? 'active' : ''}
-                onClick={() => navigate('settings')}
-              >
-                <Settings size={19} />
-                Settings
-              </button>
+              {(mode === 'admin' || can(workspace, 'settings')) && (
+                <button
+                  className={screen === 'settings' ? 'active' : ''}
+                  onClick={() => navigate('settings')}
+                >
+                  <Settings size={19} />
+                  Settings
+                </button>
+              )}
               {me.platformAdmin && (
                 <button
                   onClick={() => {
@@ -332,16 +363,18 @@ function App() {
                   {mode === 'admin' ? 'Clinic workspace' : 'Platform admin'}
                 </button>
               )}
-              {mode === 'clinic' && workspace?.subscription?.status === 'TRIAL' && (
-                <div className="trial-card">
-                  <Sparkles size={19} />
-                  <strong>A little more room to grow</strong>
-                  <p>Your free trial ends {day(workspace.subscription.endsAt)}.</p>
-                  <button onClick={() => navigate('subscription')}>
-                    Explore plans <ArrowUpRight size={14} />
-                  </button>
-                </div>
-              )}
+              {mode === 'clinic' &&
+                can(workspace, 'settings') &&
+                workspace?.subscription?.status === 'TRIAL' && (
+                  <div className="trial-card">
+                    <Sparkles size={19} />
+                    <strong>A little more room to grow</strong>
+                    <p>Your free trial ends {day(workspace.subscription.endsAt)}.</p>
+                    <button onClick={() => navigate('subscription')}>
+                      Explore plans <ArrowUpRight size={14} />
+                    </button>
+                  </div>
+                )}
               <button className="profile" onClick={logout}>
                 <span className="avatar">{initials(me.name)}</span>
                 <div>
@@ -469,6 +502,7 @@ function useData(url: string, tick: number) {
   useEffect(() => {
     let active = true;
     setFailure(null);
+    if (!url) return;
     api(url)
       .then((d) => {
         if (active) setResult({ url, value: d });
@@ -516,7 +550,10 @@ function Dashboard({ tick, modal, action, navigate, name, workspace }: any) {
     <>
       <PageTitle
         eyebrow="LET’S MAKE EVERY SMILE COUNT"
-        title={`Welcome back, ${name.replace(/^Dr\.\s*/, '').split(' ')[0]}`}
+        title={
+          panelNames[workspace?.role] ||
+          `Welcome back, ${name.replace(/^Dr\.\s*/, '').split(' ')[0]}`
+        }
         subtitle="A clear view of your clinic, so you can focus on care."
       >
         <span className="date-pill">
@@ -546,20 +583,24 @@ function Dashboard({ tick, modal, action, navigate, name, workspace }: any) {
           icon={CalendarDays}
           color="peach"
         />
-        <Metric
-          label="Patient collections"
-          value={money(d.collectionsPaise)}
-          detail="All recorded patient payments"
-          icon={Wallet}
-          color="blue"
-        />
-        <Metric
-          label="Outstanding balance"
-          value={money(d.outstandingPaise)}
-          detail="Across open patient invoices"
-          icon={CreditCard}
-          color="lavender"
-        />
+        {can(workspace, 'billing') && (
+          <Metric
+            label="Patient collections"
+            value={money(d.collectionsPaise)}
+            detail="All recorded patient payments"
+            icon={Wallet}
+            color="blue"
+          />
+        )}
+        {can(workspace, 'billing') && (
+          <Metric
+            label="Outstanding balance"
+            value={money(d.outstandingPaise)}
+            detail="Across open patient invoices"
+            icon={CreditCard}
+            color="lavender"
+          />
+        )}
       </div>
       <div className="dashboard-grid">
         <section className="panel schedule">
@@ -707,16 +748,30 @@ function Dashboard({ tick, modal, action, navigate, name, workspace }: any) {
                 'Understand your clinic’s progress',
                 () => navigate('reports'),
               ],
-            ].map(([Icon, label, desc, fn]: any) => (
-              <button key={label} onClick={fn}>
-                <span className="quick-icon">
-                  <Icon size={20} />
-                </span>
-                <strong>{label}</strong>
-                <small>{desc}</small>
-                <ArrowUpRight size={17} />
-              </button>
-            ))}
+            ]
+              .filter(([, label]) =>
+                can(
+                  workspace,
+                  (
+                    {
+                      'Add a patient': 'patients',
+                      'Create an invoice': 'billing',
+                      'Manage doctors': 'doctors',
+                      'View reports': 'reports',
+                    } as any
+                  )[String(label)],
+                ),
+              )
+              .map(([Icon, label, desc, fn]: any) => (
+                <button key={label} onClick={fn}>
+                  <span className="quick-icon">
+                    <Icon size={20} />
+                  </span>
+                  <strong>{label}</strong>
+                  <small>{desc}</small>
+                  <ArrowUpRight size={17} />
+                </button>
+              ))}
           </div>
         </section>
         <section className="panel followup-panel">
@@ -760,7 +815,7 @@ function Dashboard({ tick, modal, action, navigate, name, workspace }: any) {
           )}
         </section>
       </div>
-      {workspace?.tenant.onboarding !== 'COMPLETE' && (
+      {can(workspace, 'settings') && workspace?.tenant.onboarding !== 'COMPLETE' && (
         <Onboarding navigate={navigate} action={action} d={d} />
       )}
     </>
@@ -797,12 +852,35 @@ function Onboarding({ navigate, action, d }: any) {
     </section>
   );
 }
-function patientModal(modal: any, action: any, existing?: any) {
+async function patientModal(modal: any, action: any, existing?: any) {
+  const [branches, doctors] = await Promise.all([api('/clinic/branches'), api('/clinic/doctors')]);
   modal({
     title: existing ? 'Edit patient' : 'Add a new patient',
     subtitle: 'A good relationship starts with the right details.',
     fields: [
       { key: 'name', label: 'Full name', required: true, value: existing?.name },
+      {
+        key: 'branchId',
+        label: 'Branch',
+        type: 'select',
+        value: existing?.branchId || currentWorkspace?.branchId || '',
+        options: [
+          { value: '', label: 'Unassigned' },
+          ...branches
+            .filter((b: any) => b.active)
+            .map((b: any) => ({ value: b.id, label: b.name })),
+        ],
+      },
+      {
+        key: 'doctorId',
+        label: 'Assigned doctor',
+        type: 'select',
+        value: existing?.doctorId || currentWorkspace?.doctorId || '',
+        options: [
+          { value: '', label: 'Unassigned' },
+          ...doctors.filter((d: any) => d.active).map((d: any) => ({ value: d.id, label: d.name })),
+        ],
+      },
       { key: 'phone', label: 'Phone number', required: true, value: existing?.phone },
       { key: 'email', label: 'Email', type: 'email', value: existing?.email },
       {
@@ -1263,13 +1341,34 @@ function printInvoice(i: any, w: any, p: any, payments: any[] = []) {
   popup.print();
 }
 function Doctors({ tick, modal, action }: any) {
+  const { data: branches } = useData('/clinic/branches', tick);
+  const branchField = (d?: any): Field => ({
+    key: 'branchId',
+    label: 'Branch',
+    type: 'select',
+    value: d?.branchId || currentWorkspace?.branchId || '',
+    options: [
+      { value: '', label: 'Unassigned' },
+      ...(branches || [])
+        .filter((b: any) => b.active)
+        .map((b: any) => ({ value: b.id, label: b.name })),
+    ],
+  });
   const { data, error } = useData('/clinic/doctors', tick);
   const { data: commissions } = useData('/clinic/commissions', tick);
   const { data: specialities } = useData('/clinic/specialities', tick);
   const specialityField = (doctor?: any): Field => ({
-    key: 'specialityId', label: 'Speciality', type: 'select', required: !doctor?.specialty,
+    key: 'specialityId',
+    label: 'Speciality',
+    type: 'select',
+    required: !doctor?.specialty,
     value: doctor?.specialityId || '',
-    options: [{ value: '', label: doctor?.specialty || 'Choose speciality' }, ...(specialities || []).filter((row: any) => row.active || row.id === doctor?.specialityId).map((row: any) => ({ value: row.id, label: row.name }))],
+    options: [
+      { value: '', label: doctor?.specialty || 'Choose speciality' },
+      ...(specialities || [])
+        .filter((row: any) => row.active || row.id === doctor?.specialityId)
+        .map((row: any) => ({ value: row.id, label: row.name })),
+    ],
     hint: 'Manage available specialities in Masters.',
   });
   const add = () =>
@@ -1278,6 +1377,7 @@ function Doctors({ tick, modal, action }: any) {
       fields: [
         { key: 'name', label: 'Full name', required: true },
         specialityField(),
+        branchField(),
         { key: 'registrationNumber', label: 'Dental council registration' },
         { key: 'email', label: 'Email', type: 'email' },
         { key: 'phone', label: 'Phone' },
@@ -1301,7 +1401,7 @@ function Doctors({ tick, modal, action }: any) {
   return (
     <>
       <PageTitle title="Your care team" subtitle="Great care starts with great people.">
-        <button className="primary" onClick={add} disabled={!specialities}>
+        <button className="primary" onClick={add} disabled={!specialities || !branches}>
           <Plus size={17} />
           Add doctor
         </button>
@@ -1321,7 +1421,9 @@ function Doctors({ tick, modal, action }: any) {
                 <Badge value={d.active ? 'ACTIVE' : 'Inactive'} />
               </div>
               <h2>{d.name}</h2>
-              <p>{specialities?.find((row: any) => row.id === d.specialityId)?.name || d.specialty}</p>
+              <p>
+                {specialities?.find((row: any) => row.id === d.specialityId)?.name || d.specialty}
+              </p>
               <small>{d.registrationNumber || 'Registration not recorded'}</small>
               <div className="doctor-card-details">
                 <span>
@@ -1340,6 +1442,7 @@ function Doctors({ tick, modal, action }: any) {
                       fields: [
                         { key: 'name', label: 'Name', value: d.name, required: true },
                         specialityField(d),
+                        branchField(d),
                         {
                           key: 'consultationPaise',
                           label: 'Consultation fee (₹)',
@@ -1443,7 +1546,45 @@ function Doctors({ tick, modal, action }: any) {
     </>
   );
 }
-function Team({ tick, modal, action }: any) {
+function Team({ tick, modal, action, workspace }: any) {
+  const { data: doctors } = useData('/clinic/doctors', tick);
+  const restricted = workspace?.role === 'BRANCH_ADMIN';
+  const roles = restricted
+    ? ['DOCTOR', 'RECEPTIONIST']
+    : ['MANAGER', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT'];
+  const assignmentFields = (row?: any): Field[] => [
+    {
+      key: 'role',
+      label: 'Role',
+      type: 'select',
+      value: row?.role || 'RECEPTIONIST',
+      options: roles.map((value) => ({ value, label: value.replaceAll('_', ' ') })),
+    },
+    {
+      key: 'branchId',
+      label: 'Branch (required for branch admin)',
+      type: 'select',
+      value: row?.branchId || workspace?.branchId || '',
+      options: [
+        { value: '', label: 'All branches' },
+        ...(branches || [])
+          .filter((b: any) => b.active)
+          .map((b: any) => ({ value: b.id, label: b.name })),
+      ],
+    },
+    {
+      key: 'doctorId',
+      label: 'Doctor profile (required for doctor)',
+      type: 'select',
+      value: row?.doctorId || '',
+      options: [
+        { value: '', label: 'Choose doctor profile' },
+        ...(doctors || [])
+          .filter((d: any) => d.active)
+          .map((d: any) => ({ value: d.id, label: d.name })),
+      ],
+    },
+  ];
   const { data: staff, error } = useData('/clinic/staff', tick);
   const { data: branches } = useData('/clinic/branches', tick);
   return (
@@ -1454,6 +1595,7 @@ function Team({ tick, modal, action }: any) {
       >
         <button
           className="primary"
+          disabled={!branches || !doctors}
           onClick={() =>
             modal({
               title: 'Create a staff account',
@@ -1467,15 +1609,7 @@ function Team({ tick, modal, action }: any) {
                   type: 'password',
                   required: true,
                 },
-                {
-                  key: 'role',
-                  label: 'Role',
-                  type: 'select',
-                  options: ['MANAGER', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT'].map((value) => ({
-                    value,
-                    label: value,
-                  })),
-                },
+                ...assignmentFields(),
               ],
               submit: (d: any) => action(() => api('/clinic/staff', 'POST', d)),
             })
@@ -1498,7 +1632,7 @@ function Team({ tick, modal, action }: any) {
                 <tr>
                   <th>Name</th>
                   <th>Email</th>
-                  <th>Role</th>
+                  <th>Role / branch</th>
                   <th>Status</th>
                   <th>Access</th>
                 </tr>
@@ -1510,22 +1644,49 @@ function Team({ tick, modal, action }: any) {
                       <strong>{s.user.name}</strong>
                     </td>
                     <td>{s.user.email}</td>
-                    <td>{s.role}</td>
+                    <td>
+                      {s.role.replaceAll('_', ' ')}
+                      <small style={{ display: 'block' }}>
+                        {branches?.find((b: any) => b.id === s.branchId)?.name || 'All branches'}
+                      </small>
+                    </td>
                     <td>{s.active ? 'Active' : 'Inactive'}</td>
                     <td>
                       {s.role === 'OWNER' ? (
                         <Badge value="ACTIVE" />
                       ) : (
-                        <button
-                          className="secondary small"
-                          onClick={() =>
-                            action(() =>
-                              api(`/clinic/staff/${s.id}`, 'PATCH', { active: !s.active }),
-                            ).catch(() => {})
-                          }
-                        >
-                          {s.active ? 'Disable access' : 'Enable access'}
-                        </button>
+                        <>
+                          <button
+                            className="secondary small"
+                            disabled={!branches || !doctors}
+                            onClick={() =>
+                              modal({
+                                title: 'Edit staff access',
+                                fields: assignmentFields(s),
+                                submit: (d: any) =>
+                                  action(() =>
+                                    api(`/clinic/staff/${s.id}`, 'PATCH', {
+                                      ...d,
+                                      branchId: d.branchId || null,
+                                      doctorId: d.doctorId || null,
+                                    }),
+                                  ),
+                              })
+                            }
+                          >
+                            Edit role
+                          </button>
+                          <button
+                            className="secondary small"
+                            onClick={() =>
+                              action(() =>
+                                api(`/clinic/staff/${s.id}`, 'PATCH', { active: !s.active }),
+                              ).catch(() => {})
+                            }
+                          >
+                            {s.active ? 'Disable access' : 'Enable access'}
+                          </button>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -1538,22 +1699,24 @@ function Team({ tick, modal, action }: any) {
       <section className="panel section-gap">
         <div className="panel-heading">
           <h2>Branches</h2>
-          <button
-            className="secondary small"
-            onClick={() =>
-              modal({
-                title: 'Add a branch',
-                fields: [
-                  { key: 'name', label: 'Branch name', required: true },
-                  { key: 'address', label: 'Address' },
-                ],
-                submit: (d: any) => action(() => api('/clinic/branches', 'POST', d)),
-              })
-            }
-          >
-            <Plus size={15} />
-            Add branch
-          </button>
+          {!restricted && (
+            <button
+              className="secondary small"
+              onClick={() =>
+                modal({
+                  title: 'Add a branch',
+                  fields: [
+                    { key: 'name', label: 'Branch name', required: true },
+                    { key: 'address', label: 'Address' },
+                  ],
+                  submit: (d: any) => action(() => api('/clinic/branches', 'POST', d)),
+                })
+              }
+            >
+              <Plus size={15} />
+              Add branch
+            </button>
+          )}
         </div>
         {branches?.map((b: any) => (
           <div className="branch-row" key={b.id}>
@@ -1565,16 +1728,18 @@ function Team({ tick, modal, action }: any) {
               <p>{b.address || 'Address not added'}</p>
             </div>
             <Badge value={b.active ? 'ACTIVE' : 'Inactive'} />
-            <button
-              className="text-button"
-              onClick={() =>
-                action(() => api(`/clinic/branches/${b.id}`, 'PATCH', { active: !b.active })).catch(
-                  () => {},
-                )
-              }
-            >
-              {b.active ? 'Deactivate' : 'Activate'}
-            </button>
+            {!restricted && (
+              <button
+                className="text-button"
+                onClick={() =>
+                  action(() =>
+                    api(`/clinic/branches/${b.id}`, 'PATCH', { active: !b.active }),
+                  ).catch(() => {})
+                }
+              >
+                {b.active ? 'Deactivate' : 'Activate'}
+              </button>
+            )}
           </div>
         ))}
       </section>
@@ -1738,13 +1903,34 @@ function PatientDetail({ patient: initialPatient, back, tick, modal, action, wor
   const { data: livePatient } = useData(`/clinic/patients/${initialPatient.id}`, tick);
   const p = livePatient || initialPatient;
   const [tab, setTab] = useState('Overview');
-  const { data: notes } = useData(`/clinic/notes?patientId=${p.id}`, tick),
-    { data: plans } = useData(`/clinic/plans?patientId=${p.id}`, tick),
-    { data: invoices } = useData(`/clinic/invoices?patientId=${p.id}`, tick),
-    { data: documents } = useData(`/clinic/documents?patientId=${p.id}`, tick),
-    { data: prescriptions } = useData(`/clinic/prescriptions?patientId=${p.id}`, tick),
-    { data: followups } = useData(`/clinic/followups?patientId=${p.id}`, tick),
-    { data: communications } = useData(`/clinic/communications?patientId=${p.id}`, tick);
+  const { data: notes } = useData(
+      can(workspace, 'clinical') ? `/clinic/notes?patientId=${p.id}` : '',
+      tick,
+    ),
+    { data: plans } = useData(
+      can(workspace, 'clinical') ? `/clinic/plans?patientId=${p.id}` : '',
+      tick,
+    ),
+    { data: invoices } = useData(
+      can(workspace, 'billing') ? `/clinic/invoices?patientId=${p.id}` : '',
+      tick,
+    ),
+    { data: documents } = useData(
+      can(workspace, 'documents') ? `/clinic/documents?patientId=${p.id}` : '',
+      tick,
+    ),
+    { data: prescriptions } = useData(
+      can(workspace, 'clinical') ? `/clinic/prescriptions?patientId=${p.id}` : '',
+      tick,
+    ),
+    { data: followups } = useData(
+      can(workspace, 'patients') ? `/clinic/followups?patientId=${p.id}` : '',
+      tick,
+    ),
+    { data: communications } = useData(
+      can(workspace, 'patients') ? `/clinic/communications?patientId=${p.id}` : '',
+      tick,
+    );
   return (
     <>
       <button className="text-button back-button" onClick={back}>
@@ -1790,36 +1976,53 @@ function PatientDetail({ patient: initialPatient, back, tick, modal, action, wor
           'Documents',
           'Prescriptions',
           'Follow-ups',
-        ].map((t) => (
-          <button key={t} className={tab === t ? 'selected' : ''} onClick={() => setTab(t)}>
-            {t}
-          </button>
-        ))}
+        ]
+          .filter(
+            (t) =>
+              t === 'Overview' ||
+              can(
+                workspace,
+                t === 'Billing'
+                  ? 'billing'
+                  : t === 'Documents'
+                    ? 'documents'
+                    : t === 'Follow-ups'
+                      ? 'patients'
+                      : 'clinical',
+              ),
+          )
+          .map((t) => (
+            <button key={t} className={tab === t ? 'selected' : ''} onClick={() => setTab(t)}>
+              {t}
+            </button>
+          ))}
       </div>
       {tab === 'Overview' && (
         <div className="patient-overview-grid">
           <section className="panel">
             <div className="panel-heading">
               <h2>Clinical notes</h2>
-              <button
-                className="secondary small"
-                onClick={() =>
-                  modal({
-                    title: 'Add a clinical note',
-                    fields: [
-                      { key: 'complaint', label: 'Chief complaint', required: true },
-                      { key: 'findings', label: 'Examination findings', type: 'textarea' },
-                      { key: 'diagnosis', label: 'Diagnosis', type: 'textarea' },
-                      { key: 'advice', label: 'Advice & next steps', type: 'textarea' },
-                    ],
-                    submit: (d: any) =>
-                      action(() => api('/clinic/notes', 'POST', { ...d, patientId: p.id })),
-                  })
-                }
-              >
-                <Plus size={15} />
-                Add note
-              </button>
+              {can(workspace, 'clinical') && (
+                <button
+                  className="secondary small"
+                  onClick={() =>
+                    modal({
+                      title: 'Add a clinical note',
+                      fields: [
+                        { key: 'complaint', label: 'Chief complaint', required: true },
+                        { key: 'findings', label: 'Examination findings', type: 'textarea' },
+                        { key: 'diagnosis', label: 'Diagnosis', type: 'textarea' },
+                        { key: 'advice', label: 'Advice & next steps', type: 'textarea' },
+                      ],
+                      submit: (d: any) =>
+                        action(() => api('/clinic/notes', 'POST', { ...d, patientId: p.id })),
+                    })
+                  }
+                >
+                  <Plus size={15} />
+                  Add note
+                </button>
+              )}
             </div>
             {notes?.length ? (
               notes.map((n: any) => (
@@ -1862,57 +2065,61 @@ function PatientDetail({ patient: initialPatient, back, tick, modal, action, wor
               <div className="panel-body">
                 <strong>Address</strong>
                 <p>{p.address || 'Not provided'}</p>
-                <button
-                  className="text-button"
-                  onClick={() => download(`/clinic/export?patientId=${p.id}`)}
-                >
-                  Export patient record <ArrowDownToLine size={15} />
-                </button>
+                {can(workspace, 'settings') && (
+                  <button
+                    className="text-button"
+                    onClick={() => download(`/clinic/export?patientId=${p.id}`)}
+                  >
+                    Export patient record <ArrowDownToLine size={15} />
+                  </button>
+                )}
               </div>
             </section>
-            <section className="panel section-gap">
-              <div className="panel-heading">
-                <h2>Communication log</h2>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    modal({
-                      title: 'Record patient communication',
-                      subtitle: 'This records a conversation; it does not send a message.',
-                      fields: [
-                        {
-                          key: 'channel',
-                          label: 'Channel',
-                          type: 'select',
-                          options: ['PHONE', 'EMAIL', 'SMS', 'WHATSAPP'].map((value) => ({
-                            value,
-                            label: value,
-                          })),
-                        },
-                        { key: 'message', label: 'Summary', type: 'textarea', required: true },
-                      ],
-                      submit: (d: any) =>
-                        action(() =>
-                          api('/clinic/communications', 'POST', { ...d, patientId: p.id }),
-                        ),
-                    })
-                  }
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-              {communications?.map((c: any) => (
-                <div className="panel-body" key={c.id}>
-                  <small>
-                    {day(c.createdAt)} · {c.channel}
-                  </small>
-                  <p>{c.message}</p>
+            {can(workspace, 'patients') && (
+              <section className="panel section-gap">
+                <div className="panel-heading">
+                  <h2>Communication log</h2>
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      modal({
+                        title: 'Record patient communication',
+                        subtitle: 'This records a conversation; it does not send a message.',
+                        fields: [
+                          {
+                            key: 'channel',
+                            label: 'Channel',
+                            type: 'select',
+                            options: ['PHONE', 'EMAIL', 'SMS', 'WHATSAPP'].map((value) => ({
+                              value,
+                              label: value,
+                            })),
+                          },
+                          { key: 'message', label: 'Summary', type: 'textarea', required: true },
+                        ],
+                        submit: (d: any) =>
+                          action(() =>
+                            api('/clinic/communications', 'POST', { ...d, patientId: p.id }),
+                          ),
+                      })
+                    }
+                  >
+                    <Plus size={16} />
+                  </button>
                 </div>
-              ))}
-              {!communications?.length && (
-                <p className="panel-body muted">No communications recorded.</p>
-              )}
-            </section>
+                {communications?.map((c: any) => (
+                  <div className="panel-body" key={c.id}>
+                    <small>
+                      {day(c.createdAt)} · {c.channel}
+                    </small>
+                    <p>{c.message}</p>
+                  </div>
+                ))}
+                {!communications?.length && (
+                  <p className="panel-body muted">No communications recorded.</p>
+                )}
+              </section>
+            )}
           </div>
         </div>
       )}
@@ -2347,11 +2554,32 @@ function TreatmentCard({ plan, tick, modal, action }: any) {
       title: 'Add tooth-wise treatment',
       fields: [
         { key: 'tooth', label: 'FDI tooth number (e.g. 36)', required: true },
-        { key: 'catalogItemId', label: 'Charge master', type: 'select', value: '',
+        {
+          key: 'catalogItemId',
+          label: 'Charge master',
+          type: 'select',
+          value: '',
           options: catalog.map((row: any) => ({ value: row.id, label: row.name })),
-          updates: Object.fromEntries(catalog.map((row: any) => [row.id, { name: row.name, pricePaise: row.pricePaise / 100, labChargePaise: (row.labChargePaise || 0) / 100, plannedSessions: row.sessions }])) },
+          updates: Object.fromEntries(
+            catalog.map((row: any) => [
+              row.id,
+              {
+                name: row.name,
+                pricePaise: row.pricePaise / 100,
+                labChargePaise: (row.labChargePaise || 0) / 100,
+                plannedSessions: row.sessions,
+              },
+            ]),
+          ),
+        },
         { key: 'name', label: 'Treatment name', required: true, value: catalog[0]?.name || '' },
-        { key: 'labChargePaise', label: 'Lab charge (₹)', type: 'money', required: true, value: (catalog[0]?.labChargePaise || 0) / 100 },
+        {
+          key: 'labChargePaise',
+          label: 'Lab charge (₹)',
+          type: 'money',
+          required: true,
+          value: (catalog[0]?.labChargePaise || 0) / 100,
+        },
         {
           key: 'pricePaise',
           label: 'Total treatment price (₹)',
@@ -2629,7 +2857,15 @@ function ClinicSettings({ workspace, tick, modal, action, navigate }: any) {
         </section>
       </div>
       <section className="panel section-gap">
-        <div className="panel-heading"><div><h2>Clinic masters</h2><p>Manage specialities, charge groups, charges and lab charges in one place.</p></div><button className="secondary small" onClick={() => navigate('masters')}>Open masters</button></div>
+        <div className="panel-heading">
+          <div>
+            <h2>Clinic masters</h2>
+            <p>Manage specialities, charge groups, charges and lab charges in one place.</p>
+          </div>
+          <button className="secondary small" onClick={() => navigate('masters')}>
+            Open masters
+          </button>
+        </div>
       </section>
     </>
   );
@@ -3056,7 +3292,13 @@ function FormModal({ modal, close, notify, refresh }: any) {
                         aria-label={f.label}
                         required={f.required}
                         value={values[f.key]}
-                        onChange={(e) => setValues({ ...values, [f.key]: e.target.value, ...f.updates?.[e.target.value] })}
+                        onChange={(e) =>
+                          setValues({
+                            ...values,
+                            [f.key]: e.target.value,
+                            ...f.updates?.[e.target.value],
+                          })
+                        }
                       >
                         {!f.required && <option value="">Choose an option</option>}
                         {f.options?.map((o) => (

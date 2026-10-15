@@ -124,7 +124,9 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByRole('tab', { name: 'Charge master', exact: true }).click();
   await page.getByRole('button', { name: 'Add charge', exact: true }).click();
   masterDialog = page.getByRole('dialog');
-  await masterDialog.getByLabel('Charge group', { exact: true }).selectOption({ label: 'Dental procedures' });
+  await masterDialog
+    .getByLabel('Charge group', { exact: true })
+    .selectOption({ label: 'Dental procedures' });
   await masterDialog.getByLabel('Charge name').fill('Root canal');
   await masterDialog.getByLabel('Charge (₹)', { exact: true }).fill('2000');
   await masterDialog.getByLabel('Lab charge (₹)', { exact: true }).fill('500');
@@ -147,8 +149,8 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await dialog.getByLabel('Patient consent recorded').check();
   await dialog.getByRole('button', { name: 'Save changes' }).click();
   await page.getByRole('button', { name: 'Open record' }).click();
-  await page.route('**/api/clinic/charts?*', async route => {
-    await new Promise(resolve => setTimeout(resolve, 500));
+  await page.route('**/api/clinic/charts?*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
     await route.continue();
   });
   await page.getByRole('button', { name: 'Tooth chart', exact: true }).click();
@@ -207,4 +209,98 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.locator('.sidebar nav').getByRole('button', { name: 'Patients', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Patients', exact: true })).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test('staff creation selects branch and each role opens its permitted panel', async ({ page }) => {
+  const password = 'Role-Panel-Test-Password-123';
+  const ownerEmail = `${randomUUID()}@example.test`;
+  const headers = { Origin: 'http://localhost:5173' };
+  const plans = await (await page.request.get('/api/public/plans')).json();
+  const plan = plans.find((p: any) => p.name === 'Enterprise');
+  const signup = await page.request.post('/api/auth/register', {
+    headers,
+    data: {
+      clinicName: 'Role Panel Clinic',
+      name: 'Role owner',
+      email: ownerEmail,
+      password,
+      phone: '9876543210',
+      planId: plan.id,
+      acceptTerms: true,
+    },
+  });
+  expect(signup.status()).toBe(201);
+  await page.request.post('/api/auth/login', { headers, data: { email: ownerEmail, password } });
+  const branch = await (
+    await page.request.post('/api/clinic/branches', { headers, data: { name: 'Main branch' } })
+  ).json();
+  const doctor = await (
+    await page.request.post('/api/clinic/doctors', {
+      headers,
+      data: { name: 'Doctor panel profile', branchId: branch.id },
+    })
+  ).json();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/');
+  await page
+    .locator('.sidebar nav')
+    .getByRole('button', { name: 'Team & branches', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Add staff', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const adminEmail = `${randomUUID()}@example.test`;
+  await dialog.getByLabel('Name', { exact: true }).fill('Main branch administrator');
+  await dialog.getByLabel('Email', { exact: true }).fill(adminEmail);
+  await dialog.getByLabel('Initial password (12+ characters)').fill(password);
+  await dialog.getByLabel('Role', { exact: true }).selectOption('BRANCH_ADMIN');
+  await dialog.getByLabel('Branch (required for branch admin)').selectOption(branch.id);
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('cell', { name: adminEmail, exact: true })).toBeVisible();
+  const logins = [
+    { role: 'BRANCH_ADMIN', email: adminEmail, panel: 'Branch admin panel' },
+    { role: 'RECEPTIONIST', email: `${randomUUID()}@example.test`, panel: 'Receptionist panel' },
+    { role: 'DOCTOR', email: `${randomUUID()}@example.test`, panel: 'Doctor panel' },
+  ];
+  for (const login of logins.slice(1)) {
+    const result = await page.request.post('/api/clinic/staff', {
+      headers,
+      data: {
+        name: login.role,
+        email: login.email,
+        password,
+        role: login.role,
+        branchId: branch.id,
+        ...(login.role === 'DOCTOR' ? { doctorId: doctor.id } : {}),
+      },
+    });
+    expect(result.status()).toBe(201);
+  }
+  for (const login of logins) {
+    await page.request.post('/api/auth/logout', { headers });
+    const result = await page.request.post('/api/auth/login', {
+      headers,
+      data: { email: login.email, password },
+    });
+    expect(result.status()).toBe(200);
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: login.panel, exact: true })).toBeVisible();
+    const nav = page.locator('.sidebar nav');
+    await expect(nav.getByRole('button', { name: 'Appointments', exact: true })).toBeVisible();
+    await expect(
+      page.locator('.nav-bottom').getByRole('button', { name: 'Settings', exact: true }),
+    ).toHaveCount(0);
+    await expect(nav.getByRole('button', { name: 'Team & branches', exact: true })).toHaveCount(
+      login.role === 'BRANCH_ADMIN' ? 1 : 0,
+    );
+    await expect(nav.getByRole('button', { name: 'Billing & payments', exact: true })).toHaveCount(
+      login.role === 'DOCTOR' ? 0 : 1,
+    );
+    await expect(nav.getByRole('button', { name: 'Treatments', exact: true })).toHaveCount(
+      login.role === 'RECEPTIONIST' ? 0 : 1,
+    );
+    await page.screenshot({
+      path: `.tools/screenshots/${login.role.toLowerCase()}-panel.png`,
+      fullPage: true,
+    });
+  }
 });

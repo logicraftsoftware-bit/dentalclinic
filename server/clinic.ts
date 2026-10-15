@@ -6,6 +6,7 @@ import path from 'node:path';
 import { saveDocument, loadDocument, deleteDocument } from './storage.js';
 import {
   authenticate,
+  permission,
   clinic,
   assert,
   effectiveLimits,
@@ -52,6 +53,8 @@ const schemas: Record<
     cap: 'patients',
     limit: 'patients',
     schema: z.object({
+      branchId: id.optional(),
+      doctorId: id.optional(),
       name: text,
       phone: z.string().min(8).max(20),
       email: z.union([z.string().email(), z.literal('')]).default(''),
@@ -65,7 +68,7 @@ const schemas: Record<
   },
   doctors: {
     model: 'doctor',
-    cap: 'settings',
+    cap: 'doctors',
     limit: 'doctors',
     schema: z.object({
       name: text,
@@ -140,8 +143,15 @@ const schemas: Record<
   specialities: { model: 'speciality', cap: 'settings', schema: z.object({ name: text }) },
   'charge-groups': { model: 'chargeGroup', cap: 'settings', schema: z.object({ name: text }) },
   charges: {
-    model: 'catalogItem', cap: 'settings',
-    schema: z.object({ chargeGroupId: id, name: text, pricePaise: money, labChargePaise: money.default(0), sessions: z.number().int().min(1).max(30).default(1) }),
+    model: 'catalogItem',
+    cap: 'settings',
+    schema: z.object({
+      chargeGroupId: id,
+      name: text,
+      pricePaise: money,
+      labChargePaise: money.default(0),
+      sessions: z.number().int().min(1).max(30).default(1),
+    }),
     refs: { chargeGroupId: 'chargeGroup' },
   },
   catalog: {
@@ -230,7 +240,7 @@ clinicApi.get(
           { orderBy: { startsAt: 'asc' } },
         ),
         permissionFinancial(membership.role) ? store.list('invoice') : Promise.resolve([]),
-        ['OWNER', 'MANAGER', 'DOCTOR', 'RECEPTIONIST'].includes(membership.role)
+        ['OWNER', 'MANAGER', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST'].includes(membership.role)
           ? store.list('followUp', { status: 'OPEN' }, { orderBy: { dueAt: 'asc' }, take: 5 })
           : Promise.resolve([]),
       ]);
@@ -256,57 +266,106 @@ clinicApi.get(
   ),
 );
 function permissionFinancial(role: string) {
-  return ['OWNER', 'MANAGER', 'ACCOUNTANT', 'RECEPTIONIST'].includes(role);
+  return ['OWNER', 'MANAGER', 'BRANCH_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST'].includes(role);
 }
 clinicApi.get(
   '/workspace',
   run(
     'dashboard',
     async (_req: any, res: any, { tenant, subscription, membership }: any) =>
-      res.json({ tenant, subscription, role: membership.role }),
+      res.json({
+        tenant,
+        subscription,
+        role: membership.role,
+        branchId: membership.branchId,
+        doctorId: membership.doctorId,
+        capabilities: [
+          'dashboard',
+          'patients',
+          'appointments',
+          'clinical',
+          'documents',
+          'catalog',
+          'billing',
+          'reports',
+          'commissions',
+          'staff',
+          'doctors',
+          'settings',
+        ].filter((c) => permission(membership.role, c)),
+      }),
     true,
   ),
 );
 // Names and referenced masters are validated inside the serialized clinic transaction.
 async function prepareMasterData(resource: string, data: any, store: any, old?: any) {
-  if (['specialities', 'charge-groups', 'charges', 'catalog'].includes(resource) && data.name !== undefined) {
+  if (
+    ['specialities', 'charge-groups', 'charges', 'catalog'].includes(resource) &&
+    data.name !== undefined
+  ) {
     data.name = data.name.trim().replace(/\s+/g, ' ');
     const model = schemas[resource].model;
-    const duplicates = await store.count(model, { name: { equals: data.name, mode: 'insensitive' }, ...(old ? { id: { not: old.id } } : {}) });
+    const duplicates = await store.count(model, {
+      name: { equals: data.name, mode: 'insensitive' },
+      ...(old ? { id: { not: old.id } } : {}),
+    });
     assert(!duplicates, 409, 'A master with this name already exists in your clinic.');
-    if (['specialities', 'charge-groups'].includes(resource)) data.nameKey = data.name.toLowerCase();
+    if (['specialities', 'charge-groups'].includes(resource))
+      data.nameKey = data.name.toLowerCase();
   }
   if (resource === 'doctors' && (data.specialityId || old?.specialityId)) {
     const speciality = await store.get('speciality', data.specialityId || old.specialityId);
-    assert(speciality.active || (old?.specialityId === speciality.id && data.active !== true), 409, 'Select an active speciality.');
+    assert(
+      speciality.active || (old?.specialityId === speciality.id && data.active !== true),
+      409,
+      'Select an active speciality.',
+    );
     data.specialty = speciality.name;
   }
   if (['charges', 'catalog'].includes(resource)) {
     const groupId = data.chargeGroupId || old?.chargeGroupId;
     if (groupId) {
       const group = await store.get('chargeGroup', groupId);
-      assert(group.active || (old?.chargeGroupId === group.id && data.active !== true), 409, 'Select an active charge group.');
+      assert(
+        group.active || (old?.chargeGroupId === group.id && data.active !== true),
+        409,
+        'Select an active charge group.',
+      );
     }
   }
   if (resource === 'items' && data.catalogItemId) {
     const charge = await store.get('catalogItem', data.catalogItemId);
     assert(charge.active, 409, 'Select an active charge.');
-    if (charge.chargeGroupId) assert((await store.get('chargeGroup', charge.chargeGroupId)).active, 409, 'The charge group is inactive.');
+    if (charge.chargeGroupId)
+      assert(
+        (await store.get('chargeGroup', charge.chargeGroupId)).active,
+        409,
+        'The charge group is inactive.',
+      );
     data.name = charge.name;
   }
   if (old && data.active === false) {
-    if (resource === 'specialities') assert(!(await store.count('doctor', { specialityId: old.id, active: true })), 409, 'Reassign active doctors before deactivating this speciality.');
-    if (resource === 'charge-groups') assert(!(await store.count('catalogItem', { chargeGroupId: old.id, active: true })), 409, 'Deactivate or reassign charges before deactivating this group.');
+    if (resource === 'specialities')
+      assert(
+        !(await store.count('doctor', { specialityId: old.id, active: true })),
+        409,
+        'Reassign active doctors before deactivating this speciality.',
+      );
+    if (resource === 'charge-groups')
+      assert(
+        !(await store.count('catalogItem', { chargeGroupId: old.id, active: true })),
+        409,
+        'Deactivate or reassign charges before deactivating this group.',
+      );
   }
 }
 for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
   // Catalog is readable by the clinical/reception team; settings permission is required for changes.
-  const readCap =
-    ['catalog', 'charges', 'charge-groups', 'specialities'].includes(resource)
-      ? 'catalog'
-      : ['doctors', 'branches'].includes(resource)
-        ? 'dashboard'
-        : config.cap;
+  const readCap = ['catalog', 'charges', 'charge-groups', 'specialities'].includes(resource)
+    ? 'catalog'
+    : ['doctors', 'branches'].includes(resource)
+      ? 'dashboard'
+      : config.cap;
   clinicApi.get(
     `/${resource}`,
     run(readCap, async (req: any, res: any, { store }: any) => {
@@ -328,11 +387,27 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
         resource !== 'patients'
       )
         where.patientId = id.parse(req.query.patientId);
-      if (req.query.active !== undefined && ['catalog', 'charges', 'specialities', 'charge-groups'].includes(resource)) where.active = z.enum(['true', 'false']).parse(req.query.active) === 'true';
-      if (req.query.chargeGroupId && ['catalog', 'charges'].includes(resource)) where.chargeGroupId = id.parse(req.query.chargeGroupId);
+      if (
+        req.query.active !== undefined &&
+        ['catalog', 'charges', 'specialities', 'charge-groups'].includes(resource)
+      )
+        where.active = z.enum(['true', 'false']).parse(req.query.active) === 'true';
+      if (req.query.chargeGroupId && ['catalog', 'charges'].includes(resource))
+        where.chargeGroupId = id.parse(req.query.chargeGroupId);
       if (req.query.planId && resource === 'items') where.planId = id.parse(req.query.planId);
       if (req.query.itemId && resource === 'sessions') where.itemId = id.parse(req.query.itemId);
-      if (req.query.q && ['patients', 'doctors', 'catalog', 'branches', 'charges', 'specialities', 'charge-groups'].includes(resource))
+      if (
+        req.query.q &&
+        [
+          'patients',
+          'doctors',
+          'catalog',
+          'branches',
+          'charges',
+          'specialities',
+          'charge-groups',
+        ].includes(resource)
+      )
         where.name = { contains: z.string().max(100).parse(req.query.q), mode: 'insensitive' };
       const rows = await store.list(config.model, where, {
         orderBy: { createdAt: 'desc' },
@@ -357,7 +432,10 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
       const data = c.schema.strict().parse(req.body);
       if (c.limit) {
         const filters = ['doctors', 'branches'].includes(c.limit) ? { active: true } : {};
-        checkLimit(effectiveLimits(subscription)[c.limit], await store.count(c.model, filters));
+        checkLimit(
+          effectiveLimits(subscription)[c.limit],
+          await store.totalCount(c.model, filters),
+        );
       }
       for (const [field, model] of Object.entries(c.refs || {}))
         if (data[field]) await store.get(model, data[field]);
@@ -430,29 +508,39 @@ clinicApi.patch(
     res.json(row);
   }),
 );
-for (const resource of ['doctors', 'branches', 'catalog', 'specialities', 'charge-groups', 'charges'])
+for (const resource of [
+  'doctors',
+  'branches',
+  'catalog',
+  'specialities',
+  'charge-groups',
+  'charges',
+])
   clinicApi.patch(
     `/${resource}/:id`,
-    run('settings', async (req: any, res: any, { store, subscription }: any, actor: any) => {
-      const c = schemas[resource];
-      const data = c.schema
-        .partial()
-        .extend({ active: z.boolean().optional() })
-        .strict()
-        .parse(req.body);
-      const old = await store.get(c.model, id.parse(req.params.id));
-      if (data.active && !old.active && c.limit)
-        checkLimit(
-          effectiveLimits(subscription)[c.limit],
-          await store.count(c.model, { active: true }),
-        );
-      for (const [field, model] of Object.entries(c.refs || {}))
-        if (data[field]) await store.get(model, data[field]);
-      await prepareMasterData(resource, data, store, old);
-      const row = await store.update(c.model, old.id, data);
-      await store.audit(actor.userId, `${resource}.updated`, old.id);
-      res.json(row);
-    }),
+    run(
+      resource === 'doctors' ? 'doctors' : 'settings',
+      async (req: any, res: any, { store, subscription }: any, actor: any) => {
+        const c = schemas[resource];
+        const data = c.schema
+          .partial()
+          .extend({ active: z.boolean().optional() })
+          .strict()
+          .parse(req.body);
+        const old = await store.get(c.model, id.parse(req.params.id));
+        if (data.active && !old.active && c.limit)
+          checkLimit(
+            effectiveLimits(subscription)[c.limit],
+            await store.totalCount(c.model, { active: true }),
+          );
+        for (const [field, model] of Object.entries(c.refs || {}))
+          if (data[field]) await store.get(model, data[field]);
+        await prepareMasterData(resource, data, store, old);
+        const row = await store.update(c.model, old.id, data);
+        await store.audit(actor.userId, `${resource}.updated`, old.id);
+        res.json(row);
+      },
+    ),
   );
 clinicApi.delete(
   '/appointments/:id',
@@ -604,15 +692,73 @@ clinicApi.post(
     res.json(row);
   }),
 );
+const staffRoles = z.enum(['MANAGER', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT']);
+async function staffAssignment(data: any, ctx: any, actor: any, old?: any) {
+  const { membership, tx, tenant, store } = ctx;
+  const role = data.role ?? old?.role;
+  const branchId = data.branchId === undefined ? old?.branchId : data.branchId;
+  const doctorId = data.doctorId === undefined ? old?.doctorId : data.doctorId;
+  if (membership.role === 'BRANCH_ADMIN') {
+    assert(
+      ['DOCTOR', 'RECEPTIONIST'].includes(role) &&
+        (!old || ['DOCTOR', 'RECEPTIONIST'].includes(old.role)),
+      403,
+      'Branch admins can manage doctors and receptionists only.',
+    );
+    assert(
+      !old || old.branchId === membership.branchId,
+      403,
+      'Staff member belongs to another branch.',
+    );
+    assert(!branchId || branchId === membership.branchId, 403, 'Choose your assigned branch.');
+  } else if (old)
+    assert(membership.role === 'OWNER', 403, 'Only an owner can change staff access.');
+  assert(!old || old.userId !== actor.userId, 403, 'You cannot change your own access.');
+  let assignedBranch = membership.role === 'BRANCH_ADMIN' ? membership.branchId : branchId || null;
+  if (assignedBranch && data.active !== false)
+    assert((await store.get('branch', assignedBranch)).active, 400, 'Choose an active branch.');
+  if (role === 'BRANCH_ADMIN') assert(assignedBranch, 400, 'Choose a branch for the branch admin.');
+  if (role === 'DOCTOR') {
+    assert(doctorId, 400, 'Choose a doctor profile for this login.');
+    const doctor = await store.get('doctor', doctorId);
+    assert(data.active === false || doctor.active, 400, 'Choose an active doctor profile.');
+    assert(
+      !assignedBranch || doctor.branchId === assignedBranch,
+      400,
+      'Doctor profile must belong to the selected branch.',
+    );
+    assignedBranch = doctor.branchId || null;
+    assert(
+      !(await tx.membership.findFirst({
+        where: {
+          tenantId: tenant.id,
+          doctorId,
+          active: true,
+          ...(old ? { id: { not: old.id } } : {}),
+        },
+      })),
+      409,
+      'This doctor already has a staff login.',
+    );
+  }
+  return { role, branchId: assignedBranch, doctorId: role === 'DOCTOR' ? doctorId : null };
+}
 clinicApi.get(
   '/staff',
-  run('settings', async (_req: any, res: any, { tx, tenant }: any) => {
+  run('staff', async (_req: any, res: any, { tx, tenant, membership }: any) => {
     res.json(
       await tx.membership.findMany({
-        where: { tenantId: tenant.id },
+        where: {
+          tenantId: tenant.id,
+          ...(membership.role === 'BRANCH_ADMIN'
+            ? { branchId: membership.branchId, role: { in: ['DOCTOR', 'RECEPTIONIST'] } }
+            : {}),
+        },
         select: {
           id: true,
           role: true,
+          branchId: true,
+          doctorId: true,
           active: true,
           user: { select: { id: true, name: true, email: true, verified: true } },
         },
@@ -622,82 +768,81 @@ clinicApi.get(
 );
 clinicApi.post(
   '/staff',
-  run(
-    'settings',
-    async (req: any, res: any, { tx, tenant, subscription, store }: any, actor: any) => {
-      const data = z
-        .object({
-          name: text,
-          email: z
-            .string()
-            .email()
-            .transform((s) => s.toLowerCase()),
-          role: z.enum(['MANAGER', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT']),
-          password: z.string().min(12).max(128),
-        })
-        .strict()
-        .parse(req.body);
+  run('staff', async (req: any, res: any, ctx: any, actor: any) => {
+    const { tx, tenant, subscription, store } = ctx;
+    const data = z
+      .object({
+        name: text,
+        email: z
+          .string()
+          .email()
+          .transform((s) => s.toLowerCase()),
+        role: staffRoles,
+        branchId: id.nullable().optional(),
+        doctorId: id.nullable().optional(),
+        password: z.string().min(12).max(128),
+      })
+      .strict()
+      .parse(req.body);
+    const assignment = await staffAssignment(data, ctx, actor);
+    checkLimit(
+      effectiveLimits(subscription).staff,
+      await tx.membership.count({
+        where: { tenantId: tenant.id, active: true, role: { not: 'OWNER' } },
+      }),
+    );
+    assert(
+      !(await tx.user.findUnique({ where: { email: data.email } })),
+      409,
+      'Account already exists. Ask support for a membership invitation.',
+    );
+    const user = await tx.user.create({
+      data: {
+        name: data.name,
+        email: data.email,
+        passwordHash: await bcrypt.hash(data.password, 12),
+      },
+    });
+    const row = await tx.membership.create({
+      data: { userId: user.id, tenantId: tenant.id, ...assignment },
+    });
+    await store.audit(actor.userId, 'staff.created', row.id);
+    res.status(201).json(row);
+  }),
+);
+clinicApi.patch(
+  '/staff/:id',
+  run('staff', async (req: any, res: any, ctx: any, actor: any) => {
+    const { tx, tenant, subscription, store } = ctx;
+    const data = z
+      .object({
+        role: staffRoles.optional(),
+        branchId: id.nullable().optional(),
+        doctorId: id.nullable().optional(),
+        active: z.boolean().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const old = await tx.membership.findFirst({
+      where: { id: id.parse(req.params.id), tenantId: tenant.id },
+    });
+    assert(old && old.role !== 'OWNER', 403, 'Cannot alter the owner membership.');
+    const assignment = await staffAssignment(data, ctx, actor, old);
+    if (data.active && !old.active)
       checkLimit(
         effectiveLimits(subscription).staff,
         await tx.membership.count({
           where: { tenantId: tenant.id, active: true, role: { not: 'OWNER' } },
         }),
       );
-      assert(
-        !(await tx.user.findUnique({ where: { email: data.email } })),
-        409,
-        'Account already exists. Ask support for a membership invitation.',
-      );
-      const user = await tx.user.create({
-        data: {
-          name: data.name,
-          email: data.email,
-          passwordHash: await bcrypt.hash(data.password, 12),
-        },
-      });
-      const row = await tx.membership.create({
-        data: { userId: user.id, tenantId: tenant.id, role: data.role },
-      });
-      await store.audit(actor.userId, 'staff.created', row.id);
-      res.status(201).json(row);
-    },
-  ),
-);
-clinicApi.patch(
-  '/staff/:id',
-  run(
-    'settings',
-    async (
-      req: any,
-      res: any,
-      { tx, tenant, subscription, store, membership }: any,
-      actor: any,
-    ) => {
-      assert(membership.role === 'OWNER', 403, 'Only an owner can change staff access.');
-      const data = z
-        .object({
-          role: z.enum(['MANAGER', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT']).optional(),
-          active: z.boolean().optional(),
-        })
-        .strict()
-        .parse(req.body);
-      const old = await tx.membership.findFirst({
-        where: { id: id.parse(req.params.id), tenantId: tenant.id },
-      });
-      assert(old && old.role !== 'OWNER', 403, 'Cannot alter the owner membership.');
-      if (data.active && !old.active)
-        checkLimit(
-          effectiveLimits(subscription).staff,
-          await tx.membership.count({
-            where: { tenantId: tenant.id, active: true, role: { not: 'OWNER' } },
-          }),
-        );
-      const row = await tx.membership.update({ where: { id: old.id }, data });
-      await tx.session.deleteMany({ where: { userId: old.userId, tenantId: tenant.id } });
-      await store.audit(actor.userId, 'staff.updated', row.id);
-      res.json(row);
-    },
-  ),
+    const row = await tx.membership.update({
+      where: { id: old.id },
+      data: { ...assignment, ...(data.active !== undefined ? { active: data.active } : {}) },
+    });
+    await tx.session.deleteMany({ where: { userId: old.userId, tenantId: tenant.id } });
+    await store.audit(actor.userId, 'staff.updated', row.id);
+    res.json(row);
+  }),
 );
 clinicApi.patch(
   '/settings',
@@ -805,7 +950,9 @@ clinicApi.get(
     const patientId = req.query.patientId ? id.parse(req.query.patientId) : null;
     if (patientId) await store.get('patient', patientId);
     const result: Record<string, unknown> = {};
-    if (!patientId) for (const model of ['speciality', 'chargeGroup', 'catalogItem'] as OwnedModel[]) result[model] = await store.list(model);
+    if (!patientId)
+      for (const model of ['speciality', 'chargeGroup', 'catalogItem'] as OwnedModel[])
+        result[model] = await store.list(model);
     for (const model of [
       'patient',
       'appointment',
@@ -881,13 +1028,9 @@ clinicApi.post(
     else if (b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
       mime = 'image/png';
     assert(mime, 400, 'Only PDF, JPEG and PNG documents are supported.');
-    const docs = await store.list('document');
+    const bytes = await store.documentBytes();
     const limit = effectiveLimits(subscription).storageBytes;
-    assert(
-      limit == null || docs.reduce((s: number, d: any) => s + d.bytes, 0) + f.size <= limit,
-      409,
-      'Document storage limit reached.',
-    );
+    assert(limit == null || bytes + f.size <= limit, 409, 'Document storage limit reached.');
     const storageKey = `${store.tenantId}/${opaque()}`;
     await saveDocument(storageKey, b, mime);
     try {

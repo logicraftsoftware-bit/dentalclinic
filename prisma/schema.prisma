@@ -59,6 +59,8 @@ model Membership {
   id String @id @default(uuid()) @map("_id")
   userId String
   tenantId String
+  branchId String?
+  doctorId String?
   role String @default("OWNER")
   active Boolean @default(true)
   user User @relation(fields: [userId], references: [id])
@@ -205,6 +207,8 @@ model Doctor {
   @@index([tenantId])
 }
 model Patient {
+  branchId String?
+  doctorId String?
   id String @id @default(uuid()) @map("_id")
   tenantId String
   name String
