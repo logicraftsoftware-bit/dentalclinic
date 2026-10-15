@@ -384,14 +384,14 @@ export async function clinic<T>(
     membership: any;
     tx: Prisma.TransactionClient;
   }) => Promise<T>,
-  options: { accessOnly?: boolean; hostname?: string } = {},
+  options: { accessOnly?: boolean; hostname?: string; readOnly?: boolean } = {},
 ) {
   assert(actor.tenantId, 403, 'Choose an authorized clinic workspace.');
   const tenantId = actor.tenantId;
   return transaction(
     async (tx) => {
       // Serialize tenant writes/counts and recheck status after acquiring the lock.
-      await lock(tx, tenantId);
+      if (!options.readOnly) await lock(tx, tenantId);
 
       const membership = await tx.membership.findUnique({
         where: { userId_tenantId: { userId: actor.userId, tenantId } },

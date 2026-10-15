@@ -789,6 +789,15 @@ test('masters create on a clinic, normalize names and reject duplicate or invali
   );
   assert.equal(group.status, 201, JSON.stringify(group.data));
   masterGroup = group.data;
+  const lockBeforeReads = await db.transactionLock.findUniqueOrThrow({ where: { id: a.tenantId } });
+  const masterReads = await Promise.all(
+    Array.from({ length: 4 }, () => ['specialities', 'charge-groups', 'charges']).flat()
+      .map((resource) => request(`/clinic/${resource}`, 'GET', undefined, a.cookie)),
+  );
+  for (const response of masterReads) assert.equal(response.status, 200, JSON.stringify(response.data));
+  assert.ok(masterReads[1].data.some((row: any) => row.id === masterGroup.id));
+  const lockAfterReads = await db.transactionLock.findUniqueOrThrow({ where: { id: a.tenantId } });
+  assert.equal(lockAfterReads.revision, lockBeforeReads.revision, 'Master reads must not write the clinic lock');
   const charge = await request(
     '/clinic/charges',
     'POST',

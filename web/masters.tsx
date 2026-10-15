@@ -13,10 +13,12 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
   const setKind = (key: MasterKind) => go(`/clinic/masters/${key}`);
   const [data, setData] = useState<Record<MasterKind, any[]> | null>(null);
   const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   useEffect(() => {
     let active = true;
+    setError('');
     Promise.all(Object.keys(labels).map((key) => api(`/clinic/${key}`)))
       .then((rows) => {
         if (active) {
@@ -30,7 +32,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
     return () => {
       active = false;
     };
-  }, [tick]);
+  }, [tick, retry]);
   const groups = data?.['charge-groups'] || [];
   const canManage = ['OWNER', 'MANAGER'].includes(workspace?.role);
   const edit = (row?: any) => {
@@ -172,10 +174,13 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
         {error && (
           <div className="error-banner" role="alert">
             {error}
+            <button className="text-button" onClick={() => setRetry((value) => value + 1)}>
+              Retry loading
+            </button>
           </div>
         )}
         {!data ? (
-          <p className="panel-body muted">Loading masters…</p>
+          <p className="panel-body muted">{error ? 'Masters could not be loaded.' : 'Loading masters…'}</p>
         ) : (
           <>
             {kind === 'charges' && !groups.some((group) => group.active) && (

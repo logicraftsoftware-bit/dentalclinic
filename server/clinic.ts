@@ -24,7 +24,7 @@ import { zonedDayRange, dateKey } from './time.js';
 
 export const clinicApi = Router();
 const run =
-  (capability: string, fn: any, accessOnly = false) =>
+  (capability: string, fn: any, accessOnly = false, readOnly = false) =>
   (req: any, res: any, next: any) =>
     authenticate(req)
       .then((actor) =>
@@ -32,7 +32,7 @@ const run =
           actor,
           capability,
           (ctx) => transactionalReply(req, ctx.store, (reply) => fn(req, reply, ctx, actor)),
-          { accessOnly, hostname: req.hostname },
+          { accessOnly, hostname: req.hostname, readOnly },
         ),
       )
       .then((reply) => reply.flush(res))
@@ -414,7 +414,7 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
         take: 500,
       });
       res.json(resource === 'documents' ? rows.map(({ storageKey: _key, ...r }: any) => r) : rows);
-    }),
+    }, false, ['specialities', 'charge-groups', 'charges', 'catalog'].includes(resource)),
   );
   clinicApi.get(
     `/${resource}/:id`,
