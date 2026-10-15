@@ -1621,6 +1621,9 @@ function Doctors({ tick, modal, action }: any) {
   );
 }
 function Team({ tick, modal, action, workspace }: any) {
+  const deleteEntry = (url: string, message: string) => {
+    if (window.confirm(message)) action(() => api(url, 'DELETE')).catch(() => {});
+  };
   const { data: doctors } = useData('/clinic/doctors', tick);
   const restricted = workspace?.role === 'BRANCH_ADMIN';
   const roles = restricted
@@ -1760,6 +1763,11 @@ function Team({ tick, modal, action, workspace }: any) {
                           >
                             {s.active ? 'Disable access' : 'Enable access'}
                           </button>
+                          {(workspace?.role === 'OWNER' || restricted) && (
+                            <button className="text-button" onClick={() => deleteEntry(`/clinic/staff/${s.id}`, `Delete ${s.user.name}'s access to this clinic? Their clinical records will be retained.`)}>
+                              Delete
+                            </button>
+                          )}
                         </>
                       )}
                     </td>
@@ -1812,6 +1820,11 @@ function Team({ tick, modal, action, workspace }: any) {
                 }
               >
                 {b.active ? 'Deactivate' : 'Activate'}
+              </button>
+            )}
+            {!restricted && (
+              <button className="text-button" onClick={() => deleteEntry(`/clinic/branches/${b.id}`, `Delete branch "${b.name}"? This is only possible when no doctors, patients, appointments or staff are linked to it.`)}>
+                Delete
               </button>
             )}
           </div>

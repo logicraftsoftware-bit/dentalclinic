@@ -766,6 +766,25 @@ test('staff accounts sign in and use their membership without email verification
   assert.equal((await request('/clinic/patients', 'GET', undefined, login.cookie)).status, 200);
 });
 
+test('team deletion protects owners and linked branches and revokes removed staff sessions', async () => {
+  const branch = await db.branch.create({ data: { tenantId: a.tenantId, name: 'Deletion test branch' } });
+  const user = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: 'Removed staff', passwordHash: await bcrypt.hash(password, 12) } });
+  const membership = await db.membership.create({ data: { tenantId: a.tenantId, userId: user.id, branchId: branch.id, role: 'RECEPTIONIST' } });
+  const login = await request('/auth/login', 'POST', { email: user.email, password });
+  assert.equal(login.status, 200);
+  assert.equal((await request(`/clinic/branches/${branch.id}`, 'DELETE', undefined, a.cookie)).status, 409);
+  assert.equal((await request(`/clinic/branches/${branch.id}`, 'DELETE', undefined, b.cookie)).status, 404);
+  const owner = await db.membership.findFirstOrThrow({ where: { tenantId: a.tenantId, role: 'OWNER' } });
+  assert.equal((await request(`/clinic/staff/${owner.id}`, 'DELETE', undefined, a.cookie)).status, 403);
+  assert.equal((await request(`/clinic/staff/${membership.id}`, 'DELETE', undefined, b.cookie)).status, 404);
+  assert.equal((await request(`/clinic/staff/${membership.id}`, 'DELETE', undefined, a.cookie)).status, 200);
+  assert.equal(await db.membership.findUnique({ where: { id: membership.id } }), null);
+  assert.ok(await db.user.findUnique({ where: { id: user.id } }));
+  assert.equal((await request('/clinic/patients', 'GET', undefined, login.cookie)).status, 401);
+  assert.equal((await request(`/clinic/branches/${branch.id}`, 'DELETE', undefined, a.cookie)).status, 200);
+  assert.equal(await db.branch.findUnique({ where: { id: branch.id } }), null);
+});
+
 let masterSpeciality: any, masterGroup: any, masterCharge: any;
 test('masters create on a clinic, normalize names and reject duplicate or invalid amounts', async () => {
   const speciality = await request(

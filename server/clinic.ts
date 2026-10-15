@@ -543,6 +543,22 @@ for (const resource of [
     ),
   );
 clinicApi.delete(
+  '/branches/:id',
+  run('settings', async (req: any, res: any, { store, tx, tenant }: any, actor: any) => {
+    const branch = await store.get('branch', id.parse(req.params.id));
+    const linked = await Promise.all([
+      store.count('doctor', { branchId: branch.id }),
+      store.count('patient', { branchId: branch.id }),
+      store.count('appointment', { branchId: branch.id }),
+      tx.membership.count({ where: { tenantId: tenant.id, branchId: branch.id } }),
+    ]);
+    assert(!linked.some(Boolean), 409, 'This branch has linked doctors, patients, appointments or staff. Reassign them or deactivate the branch instead.');
+    await store.remove('branch', branch.id);
+    await store.audit(actor.userId, 'branches.deleted', branch.id);
+    res.json({ deleted: true });
+  }),
+);
+clinicApi.delete(
   '/appointments/:id',
   run('appointments', async (req: any, res: any, { store }: any, actor: any) => {
     const row = await store.update('appointment', id.parse(req.params.id), { status: 'CANCELLED' });
@@ -842,6 +858,22 @@ clinicApi.patch(
     await tx.session.deleteMany({ where: { userId: old.userId, tenantId: tenant.id } });
     await store.audit(actor.userId, 'staff.updated', row.id);
     res.json(row);
+  }),
+);
+clinicApi.delete(
+  '/staff/:id',
+  run('staff', async (req: any, res: any, { tx, tenant, membership, store }: any, actor: any) => {
+    const staff = await tx.membership.findFirst({ where: { id: id.parse(req.params.id), tenantId: tenant.id } });
+    assert(staff, 404, 'Staff member not found in your clinic.');
+    assert(staff.role !== 'OWNER', 403, 'Cannot delete the owner membership.');
+    assert(staff.userId !== actor.userId, 403, 'You cannot delete your own access.');
+    if (membership.role === 'BRANCH_ADMIN') {
+      assert(staff.branchId === membership.branchId && ['DOCTOR', 'RECEPTIONIST'].includes(staff.role), 403, 'You can only delete doctors and receptionists in your assigned branch.');
+    } else assert(membership.role === 'OWNER', 403, 'Only an owner can delete staff access.');
+    await tx.session.deleteMany({ where: { userId: staff.userId, tenantId: tenant.id } });
+    await tx.membership.delete({ where: { id: staff.id } });
+    await store.audit(actor.userId, 'staff.deleted', staff.id);
+    res.json({ deleted: true });
   }),
 );
 clinicApi.patch(
