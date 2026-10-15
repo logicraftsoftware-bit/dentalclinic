@@ -16,6 +16,8 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [kind, query, status]);
   useEffect(() => {
     let active = true;
     setError('');
@@ -93,6 +95,12 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
       (status === 'all' || row.active === (status === 'active'))
     );
   });
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const firstRow = (currentPage - 1) * pageSize;
+  const pageRows = rows.slice(firstRow, firstRow + pageSize);
+  useEffect(() => setPage((value) => Math.min(value, pageCount)), [pageCount]);
   return (
     <>
       <div className="page-heading">
@@ -211,7 +219,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
+                  {pageRows.map((row) => (
                     <tr key={row.id}>
                       {kind === 'charges' && (
                         <td>
@@ -266,6 +274,24 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
                 </tbody>
               </table>
             </div>
+            <nav
+              aria-label="Masters pagination"
+              className="panel-body"
+              style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}
+            >
+              <span className="muted" role="status">
+                Showing {rows.length ? firstRow + 1 : 0}–{Math.min(firstRow + pageSize, rows.length)} of {rows.length} entries
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                  Previous
+                </button>
+                <span>Page {currentPage} of {pageCount}</span>
+                <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
+                  Next
+                </button>
+              </div>
+            </nav>
           </>
         )}
       </section>
