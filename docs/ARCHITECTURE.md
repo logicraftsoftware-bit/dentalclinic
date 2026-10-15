@@ -2,7 +2,7 @@
 
 React/TypeScript -> same-origin Express API -> Prisma 6.19 -> MongoDB replica set. Vercel serves the Vite frontend and api/index.ts function. Private S3 storage persists documents; local filesystem storage is permitted only outside Vercel.
 
-Authentication uses opaque hashed revocable sessions, HttpOnly cookies, mutation-origin checks, verified accounts and active membership checks. Platform administrators use separate authorized endpoints. Clinic APIs require an actual membership even for a platform administrator. Hostnames provide an additional membership boundary; they are not authentication credentials.
+Authentication uses opaque hashed revocable sessions, HttpOnly cookies, mutation-origin checks, password authentication and active membership checks. Platform administrators use separate authorized endpoints. Clinic APIs require an actual membership even for a platform administrator. Hostnames provide an additional membership boundary; they are not authentication credentials.
 
 Every clinical record has tenantId. TenantStore injects that tenant into reads/counts and compound selectors for updates/deletes, strips identity fields on updates, rejects nested mutation inputs, and checks each supplied clinical foreign reference within the same tenant. MongoDB does not provide PostgreSQL row-level security or composite foreign keys. Raw database access is therefore privileged: only the central clinic authorization layer, explicitly authorized platform routes, seed and workers may use it. Do not expose raw Prisma to new clinic routes. UUID strings map to MongoDB _id and preserve API validation.
 

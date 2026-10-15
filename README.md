@@ -20,7 +20,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open http://localhost:5173. Signup requires SMTP in production; development displays a verification code. To create a verified platform administrator, set `PLATFORM_ADMIN_EMAIL` and a `PLATFORM_ADMIN_PASSWORD` of at least 12 characters before running the seed. Existing accounts/passwords are preserved. There is no default administrator password.
+Open http://localhost:5173. Clinic owners and staff can sign in immediately; email verification and SMTP are not required for registration. SMTP remains necessary for emailed password resets and reminders. To create a verified platform administrator, set `PLATFORM_ADMIN_EMAIL` and a `PLATFORM_ADMIN_PASSWORD` of at least 12 characters before running the seed. Existing accounts/passwords are preserved. There is no default administrator password.
 
 The Windows launcher `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1` performs the local setup using the database selected in `.env`. PostgreSQL data in `.local-db` is left untouched but is no longer used. The old SQL migrations are archived under legacy/postgresql; do not run them for MongoDB.
 

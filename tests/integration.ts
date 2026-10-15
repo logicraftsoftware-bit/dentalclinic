@@ -53,10 +53,8 @@ async function register(name: string) {
   assert.equal(signup.status, 201, JSON.stringify(signup.data));
   const retry = await request('/auth/register', 'POST', data);
   assert.equal(retry.data.tenantId, signup.data.tenantId);
-  assert.equal(
-    (await request('/auth/verify', 'POST', { token: retry.data.developmentToken })).status,
-    200,
-  );
+  assert.equal(signup.data.developmentToken, undefined);
+  assert.equal(await db.authToken.count({ where: { purpose: 'VERIFY', user: { email } } }), 0);
   const login = await request('/auth/login', 'POST', { email, password });
   assert.equal(login.status, 200);
   return { tenantId: signup.data.tenantId, cookie: login.cookie, email };
@@ -688,4 +686,18 @@ test('health checks do not depend on the shared rate counter', async () => {
     assert.equal(health.status, 200);
     assert.equal(health.data.status, 'ok');
   } finally { (db.rateBucket as any).upsert = previous; }
+});
+
+test('staff accounts sign in and use their membership without email verification or SMTP', async () => {
+  const email = `staff-${randomUUID()}@example.test`;
+  const created = await request('/clinic/staff', 'POST', { name: 'New receptionist', email, role: 'RECEPTIONIST', password }, a.cookie);
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  assert.equal(created.data.developmentToken, undefined);
+  const user = await db.user.findUniqueOrThrow({ where: { email } });
+  assert.equal(user.verified, false);
+  assert.equal(await db.authToken.count({ where: { userId: user.id, purpose: 'VERIFY' } }), 0);
+  const login = await request('/auth/login', 'POST', { email, password });
+  assert.equal(login.status, 200);
+  assert.equal((await request('/auth/me', 'GET', undefined, login.cookie)).status, 200);
+  assert.equal((await request('/clinic/patients', 'GET', undefined, login.cookie)).status, 200);
 });

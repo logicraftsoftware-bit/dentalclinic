@@ -66,7 +66,6 @@ export async function authenticate(req: Request): Promise<Actor> {
     include: { user: true },
   });
   assert(session && session.expiresAt > new Date(), 401, 'Session expired. Please sign in.');
-  assert(session.user.verified, 403, 'Verify your email before signing in.');
   return {
     userId: session.userId,
     tenantId: session.tenantId,

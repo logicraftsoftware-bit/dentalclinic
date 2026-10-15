@@ -46,33 +46,18 @@ auth.post(
       })
       .strict()
       .parse(req.body);
-    assert(
-      !prod || process.env.SMTP_HOST,
-      503,
-      'Email verification service must be configured before signup.',
-    );
     const passwordHash = await bcrypt.hash(input.password, 12);
-    const token = opaque();
     const result = await transaction(async (tx) => {
       await lock(tx, input.email);
       const existing = await tx.user.findUnique({ where: { email: input.email } });
       if (existing) {
         assert(
-          !existing.verified && (await bcrypt.compare(input.password, existing.passwordHash)),
+          await bcrypt.compare(input.password, existing.passwordHash),
           409,
           'This email is already registered. Sign in or reset your password.',
         );
         const member = await tx.membership.findFirst({ where: { userId: existing.id } });
         assert(member, 409, 'Account exists. Contact support.');
-        await tx.authToken.deleteMany({ where: { userId: existing.id, purpose: 'VERIFY' } });
-        await tx.authToken.create({
-          data: {
-            tokenHash: hash(token),
-            userId: existing.id,
-            purpose: 'VERIFY',
-            expiresAt: new Date(Date.now() + 1800000),
-          },
-        });
         return { tenantId: member.tenantId };
       }
       const plan = await tx.plan.findFirst({ where: { id: input.planId, available: true } });
@@ -123,14 +108,6 @@ auth.post(
           sessions: Number(sessions),
         })),
       });
-      await tx.authToken.create({
-        data: {
-          tokenHash: hash(token),
-          userId: user.id,
-          purpose: 'VERIFY',
-          expiresAt: new Date(Date.now() + 1800000),
-        },
-      });
       await tx.subscriptionEvent.create({ data: { tenantId: tenant.id, kind: 'TRIAL_STARTED' } });
       return { tenantId: tenant.id };
     });
@@ -138,8 +115,7 @@ auth.post(
       .status(201)
       .json({
         ...result,
-        message: 'Check your email to verify your account.',
-        ...(await sendToken(input.email, token, 'VERIFY')),
+        message: 'Clinic workspace is ready. Sign in with your email and password.',
       });
   }),
 );
@@ -170,7 +146,6 @@ auth.post(
       user?.passwordHash || '$2b$12$mEZsINPRgkd/6rFmcVKnhOF16lxWI7VEIKKsDBBpmJnzWdqs.VBr.',
     );
     assert(user && valid, 401, 'Email or password is incorrect.');
-    assert(user.verified, 403, 'Verify your email first.');
     const member = await db.membership.findFirst({
       where: { userId: user.id, active: true },
       orderBy: { id: 'asc' },

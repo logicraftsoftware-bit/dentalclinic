@@ -36,7 +36,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Atlas schema/index setup failed. Check your database user permissions and network access.' }
     & npm.cmd run db:seed
     if ($LASTEXITCODE -ne 0) { throw 'Atlas initialization failed.' }
-    Write-Host 'Atlas initialization completed. Use the selected email/password to sign in after deploying. Add APP_URL and BASE_DOMAIN in Vercel, then redeploy. Configure SMTP before clinic signup and private S3 before document uploads.'
+    Write-Host 'Atlas initialization completed. Use the selected email/password to sign in after deploying. Add APP_URL and BASE_DOMAIN in Vercel, then redeploy. Configure SMTP for emailed password resets/reminders and private S3 before document uploads.'
 } finally {
     foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $previousValues[$name], 'Process') }
     $atlasUri = $null; $adminPassword = $null; $secureUri.Dispose(); $securePassword.Dispose()

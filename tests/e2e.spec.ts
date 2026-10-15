@@ -104,12 +104,7 @@ test('clinic owner completes signup, patient charting, session billing and payme
     .selectOption({ label: 'Professional · 14-day trial' });
   await page.locator('input[name=acceptTerms]').check();
   await page.getByRole('button', { name: 'Create clinic workspace' }).click();
-  await expect(page.locator('.development-token code')).toBeVisible();
-  const token = await page.locator('.development-token code').innerText();
-  await page.getByLabel('Email verification code').fill(token);
-  await page.getByRole('button', { name: 'Verify email', exact: true }).click();
-  await expect(page.locator('.success-banner')).toContainText('verified');
-  await page.getByRole('button', { name: 'Back to sign in' }).click();
+  await expect(page.locator('.success-banner')).toContainText('ready');
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel(/^Password/).fill(password);
   await page.getByRole('button', { name: 'Sign in to your workspace' }).click();

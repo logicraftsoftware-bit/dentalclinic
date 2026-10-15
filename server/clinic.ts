@@ -18,7 +18,6 @@ import {
   hash,
   type OwnedModel,
 } from './core.js';
-import { sendToken } from './mail.js';
 import { transactionalReply } from './reply.js';
 import { zonedDayRange, dateKey } from './time.js';
 
@@ -611,18 +610,8 @@ clinicApi.post(
       const row = await tx.membership.create({
         data: { userId: user.id, tenantId: tenant.id, role: data.role },
       });
-      const token = opaque();
-      await tx.authToken.create({
-        data: {
-          tokenHash: hash(token),
-          userId: user.id,
-          purpose: 'VERIFY',
-          expiresAt: new Date(Date.now() + 1800000),
-        },
-      });
-      const sent = await sendToken(data.email, token, 'VERIFY');
       await store.audit(actor.userId, 'staff.created', row.id);
-      res.status(201).json({ ...row, ...sent });
+      res.status(201).json(row);
     },
   ),
 );

@@ -1445,7 +1445,7 @@ function Team({ tick, modal, action }: any) {
           onClick={() =>
             modal({
               title: 'Create a staff account',
-              subtitle: 'The team member must verify their email before signing in.',
+              subtitle: 'The team member can sign in immediately with their email and password.',
               fields: [
                 { key: 'name', label: 'Name', required: true },
                 { key: 'email', label: 'Email', type: 'email', required: true },
@@ -1487,7 +1487,7 @@ function Team({ tick, modal, action }: any) {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Role</th>
-                  <th>Verification</th>
+                  <th>Status</th>
                   <th>Access</th>
                 </tr>
               </thead>
@@ -1499,7 +1499,7 @@ function Team({ tick, modal, action }: any) {
                     </td>
                     <td>{s.user.email}</td>
                     <td>{s.role}</td>
-                    <td>{s.user.verified ? 'Verified' : 'Pending verification'}</td>
+                    <td>{s.active ? 'Active' : 'Inactive'}</td>
                     <td>
                       {s.role === 'OWNER' ? (
                         <Badge value="ACTIVE" />
@@ -3338,7 +3338,7 @@ function Admin({ screen, tick, modal, action, search }: any) {
             onClick={() =>
               modal({
                 title: 'Register a clinic',
-                subtitle: 'The owner must verify their email. Registration starts a trial.',
+                subtitle: 'Registration starts a trial. The owner can sign in immediately.',
                 fields: [
                   { key: 'clinicName', label: 'Clinic name', required: true },
                   { key: 'name', label: 'Owner name', required: true },
@@ -3919,9 +3919,9 @@ function PublicSite({ plans, settings, screen, setScreen, signedIn }: any) {
       } else if (screen === 'signup') {
         data.acceptTerms = data.acceptTerms === 'on';
         const r = await api('/auth/register', 'POST', data);
-        setScreen('verify');
+        setScreen('login');
         setInfo(r.message);
-        setDevToken(r.developmentToken || '');
+        setDevToken('');
       } else if (screen === 'verify') {
         const r = await api('/auth/verify', 'POST', data);
         setInfo(r.message);
@@ -4315,7 +4315,6 @@ function PublicSite({ plans, settings, screen, setScreen, signedIn }: any) {
                 <button onClick={link('login')}>Back to sign in</button>
               )}
               {screen === 'forgot' && <button onClick={link('reset')}>I have a reset code</button>}
-              {screen === 'login' && <button onClick={link('verify')}>Verify my email</button>}
             </div>
           </div>
         </section>

@@ -17,7 +17,7 @@ Set these for the intended deployment environment:
 - DATABASE_URL: complete Atlas URI.
 - APP_URL: your actual HTTPS deployment origin, such as https://dentalclinic-example.vercel.app.
 - BASE_DOMAIN: that hostname without https://, or your configured custom base domain.
-- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, MAIL_FROM: a functioning email provider for signup and password reset.
+- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, MAIL_FROM: optional for signup/login; configure an email provider for password resets and reminders.
 - CRON_SECRET: at least 32 random characters; protects /api/cron/jobs.
 - S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY: a private document bucket and scoped credentials. Optional S3_ENDPOINT for compatible storage.
 - RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET: only when enabling payment checkout. Provider webhook: APP_URL/api/webhooks/razorpay.
@@ -62,7 +62,7 @@ Uploads/downloads are capped at 3 MB to fit Vercel payload limits. Local develop
 
 ## 6. Deploy and verify
 
-Redeploy after adding environment variables. /api/health should return {"status":"ok"}; /api/public/plans should show seeded plans. Test admin login, email verification/reset, separate clinics, appointments, session billing, payment replay, private documents and provider webhooks in staging before go-live. Check function logs without printing credentials or patient data.
+Redeploy after adding environment variables. /api/health should return {"status":"ok"}; /api/public/plans should show seeded plans. Test admin login, immediate clinic/staff login, password reset when SMTP is configured, separate clinics, appointments, session billing, payment replay, private documents and provider webhooks in staging before go-live. Check function logs without printing credentials or patient data.
 
 The configured cron runs daily at 02:00 UTC (07:30 Asia/Calcutta), compatible with Hobby scheduling. It processes at most ten clinics and five pending payment orders per invocation, using a persisted clinic cursor and lease. For larger installations on a suitable paid plan, increase invocation frequency or use a durable queue. A reminder stuck in SENDING after interruption requires operator review; SMTP cannot guarantee exactly-once delivery. Clinically operational access checks expiration on every request independently of cron.
 
