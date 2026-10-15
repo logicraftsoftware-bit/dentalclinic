@@ -4,6 +4,7 @@ import { randomBytes, createHash, timingSafeEqual, createHmac } from 'node:crypt
 import type { Request } from 'express';
 import pino from 'pino';
 import { z } from 'zod';
+import { doctorAvailableAt, doctorBranches } from './doctor-branches.js';
 
 const globalDb = globalThis as unknown as { dentaflowDb?: PrismaClient };
 function databaseOptions() {
@@ -196,7 +197,7 @@ export class TenantStore {
         patientWhere.OR = [{ doctorId }, { id: { in: appointments.map((a: any) => a.patientId) } }];
       }
       if (name === 'branch') restriction = branchId ? { id: branchId } : {};
-      else if (name === 'doctor') restriction = doctorId ? { id: doctorId } : { branchId };
+      else if (name === 'doctor') restriction = doctorId ? { id: doctorId } : { OR: [{ branchId }, { branchIds: { has: branchId } }] };
       else if (name === 'patient') restriction = patientWhere;
       else if (name === 'appointment')
         restriction = {
@@ -242,6 +243,9 @@ export class TenantStore {
   }
   private scopedData(name: OwnedModel, data: Record<string, unknown>, creating = false) {
     const result = { ...data };
+    if (name === 'doctor' && this.scope.branchId && data.branchIds !== undefined) {
+      assert(Array.isArray(data.branchIds) && data.branchIds.length === 1 && data.branchIds[0] === this.scope.branchId, 403, 'You can only assign doctors to your own branch.');
+    }
     if (this.scope.branchId && ['patient', 'doctor', 'appointment'].includes(name)) {
       assert(
         !data.branchId || data.branchId === this.scope.branchId,
@@ -318,10 +322,17 @@ export class TenantStore {
         await this.get(model, value);
       }
     }
+    if (name === 'doctor' && data.branchIds !== undefined) {
+      assert(Array.isArray(data.branchIds), 400, 'Choose valid branches.');
+      for (const branchId of data.branchIds) {
+        assert(typeof branchId === 'string', 400, 'Choose valid branches.');
+        await this.get('branch', branchId);
+      }
+    }
     if (name === 'patient' && data.doctorId) {
       const doctor = await this.get('doctor', data.doctorId as string);
       assert(
-        !data.branchId || !doctor.branchId || data.branchId === doctor.branchId,
+        !data.branchId || doctorAvailableAt(doctor, data.branchId as string),
         400,
         'Assigned doctor must belong to the patient branch.',
       );
@@ -338,6 +349,7 @@ export class TenantStore {
     for (const [field, value] of Object.entries(data)) {
       const jsonField =
         (name === 'chartVersion' && field === 'teeth') ||
+        (name === 'doctor' && field === 'branchIds') ||
         (name === 'idempotencyRecord' && ['body', 'headers'].includes(field));
       assert(
         value === null || typeof value !== 'object' || value instanceof Date || jsonField,
@@ -441,7 +453,7 @@ export async function clinic<T>(
             })
           : null;
         assert(
-          profile && (profile.branchId || null) === (membership.branchId || null),
+          profile && (membership.branchId ? doctorBranches(profile).includes(membership.branchId) : !doctorBranches(profile).length),
           403,
           'The owner must assign an active doctor profile in the correct branch.',
         );

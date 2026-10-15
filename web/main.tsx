@@ -1417,14 +1417,14 @@ function printInvoice(i: any, w: any, p: any, payments: any[] = []) {
 function Doctors({ tick, modal, action }: any) {
   const { data: branches } = useData('/clinic/branches', tick);
   const branchField = (d?: any): Field => ({
-    key: 'branchId',
-    label: 'Branch',
-    type: 'select',
-    value: d?.branchId || currentWorkspace?.branchId || '',
+    key: 'branchIds',
+    label: 'Available branches',
+    type: 'multiselect',
+    value: d?.branchIds?.length ? d.branchIds : d?.branchId ? [d.branchId] : currentWorkspace?.branchId ? [currentWorkspace.branchId] : [],
+    hint: 'Select one or more branches. Hold Ctrl to select multiple branches.',
     options: [
-      { value: '', label: 'Unassigned' },
       ...(branches || [])
-        .filter((b: any) => b.active)
+        .filter((b: any) => b.active || d?.branchIds?.includes(b.id) || d?.branchId === b.id)
         .map((b: any) => ({ value: b.id, label: b.name })),
     ],
   });
@@ -1451,22 +1451,24 @@ function Doctors({ tick, modal, action }: any) {
       fields: [
         { key: 'name', label: 'Full name', required: true },
         specialityField(),
+        { key: 'qualification', label: 'Qualification (BDS / MDS)' },
         branchField(),
         { key: 'registrationNumber', label: 'Dental council registration' },
         { key: 'email', label: 'Email', type: 'email' },
         { key: 'phone', label: 'Phone' },
         {
           key: 'consultationPaise',
-          label: 'Consultation fee (₹)',
+          label: 'Consultant doctor fee (₹)',
           type: 'money',
-          value: 500,
+          value: 300,
           required: true,
         },
+        { key: 'visitingConsultationPaise', label: 'Visiting consultant doctor fee (₹)', type: 'money', value: 1000, required: true },
         {
           key: 'commissionPercent',
           label: 'Commission (%) on collections',
           type: 'number',
-          value: 0,
+          value: 40,
           required: true,
         },
       ],
@@ -1499,14 +1501,17 @@ function Doctors({ tick, modal, action }: any) {
                 {specialities?.find((row: any) => row.id === d.specialityId)?.name || d.specialty}
               </p>
               <small>{d.registrationNumber || 'Registration not recorded'}</small>
+              {d.qualification && <p>{d.qualification}</p>}
               <div className="doctor-card-details">
                 <span>
-                  Consultation<strong>{money(d.consultationPaise)}</strong>
+                  Consultant fee<strong>{money(d.consultationPaise)}</strong>
                 </span>
+                <span>Visiting consultant fee<strong>{money(d.visitingConsultationPaise)}</strong></span>
                 <span>
                   Commission<strong>{d.commissionPercent}%</strong>
                 </span>
               </div>
+              <p>{(d.branchIds?.length ? d.branchIds : d.branchId ? [d.branchId] : []).map((id: string) => branches?.find((b: any) => b.id === id)?.name).filter(Boolean).join(' · ') || 'No branch assigned'}</p>
               <div className="doctor-actions">
                 <button
                   className="secondary small"
@@ -1516,13 +1521,15 @@ function Doctors({ tick, modal, action }: any) {
                       fields: [
                         { key: 'name', label: 'Name', value: d.name, required: true },
                         specialityField(d),
+                        { key: 'qualification', label: 'Qualification (BDS / MDS)', value: d.qualification },
                         branchField(d),
                         {
                           key: 'consultationPaise',
-                          label: 'Consultation fee (₹)',
+                          label: 'Consultant doctor fee (₹)',
                           type: 'money',
                           value: d.consultationPaise / 100,
                         },
+                        { key: 'visitingConsultationPaise', label: 'Visiting consultant doctor fee (₹)', type: 'money', value: (d.visitingConsultationPaise ?? 100000) / 100 },
                         {
                           key: 'commissionPercent',
                           label: 'Commission (%)',
@@ -3288,7 +3295,7 @@ function FormModal({ modal, close, notify, refresh }: any) {
           f.value ??
             (f.type === 'checkbox'
               ? false
-              : f.type === 'select'
+              : f.type === 'multiselect' ? [] : f.type === 'select'
                 ? f.options?.[0]?.value || ''
                 : ''),
         ]),
@@ -3387,7 +3394,11 @@ function FormModal({ modal, close, notify, refresh }: any) {
                   <>
                     {f.label}
                     {f.required && <span className="required"> *</span>}
-                    {f.type === 'select' ? (
+                    {f.type === 'multiselect' ? (
+                      <select multiple aria-label={f.label} required={f.required} value={values[f.key]} size={Math.min(5, Math.max(2, f.options?.length || 2))} onChange={(e) => setValues({ ...values, [f.key]: Array.from(e.target.selectedOptions, option => option.value) })}>
+                        {f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    ) : f.type === 'select' ? (
                       <select
                         aria-label={f.label}
                         required={f.required}

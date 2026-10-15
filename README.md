@@ -42,6 +42,8 @@ Existing treatment catalog entries appear in Charge master with an Unassigned gr
 
 No database reset is required. New collections can be created on first use; run the normal db:push maintenance command against the intended database to install the declared indexes.
 
+Doctor profiles support multiple selected branches, a consultant fee (default ₹300), a visiting consultant fee (default ₹1,000), qualifications and commission (default 40%). Existing single-branch assignments remain supported. Appointments and patient assignments accept any selected branch, while staff logins retain their assigned branch scope. Branch deletion checks all doctor assignments. These fees are stored separately on the profile; they do not automatically create invoices.
+
 ## Validation
 
 ```powershell

@@ -189,14 +189,17 @@ model Doctor {
   id String @id @default(uuid()) @map("_id")
   tenantId String
   branchId String?
+  branchIds String[] @default([])
   name String
   email String @default("")
   phone String @default("")
   specialty String @default("General Dentistry")
+  qualification String @default("")
   specialityId String?
   registrationNumber String @default("")
-  commissionPercent Int @default(0)
-  consultationPaise Int @default(50000)
+  commissionPercent Int @default(40)
+  consultationPaise Int @default(30000)
+  visitingConsultationPaise Int @default(100000)
   active Boolean @default(true)
   createdAt DateTime @default(now())
   branch Branch? @relation(fields: [branchId], references: [id])

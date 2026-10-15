@@ -21,6 +21,7 @@ import {
 } from './core.js';
 import { transactionalReply } from './reply.js';
 import { zonedDayRange, dateKey } from './time.js';
+import { doctorAvailableAt, doctorBranches } from './doctor-branches.js';
 
 export const clinicApi = Router();
 const run =
@@ -75,11 +76,14 @@ const schemas: Record<
       email: z.union([z.string().email(), z.literal('')]).default(''),
       phone: string,
       specialty: z.string().max(200).default('General Dentistry'),
+      qualification: z.string().trim().max(200).default(''),
       specialityId: id.optional(),
       registrationNumber: string,
-      commissionPercent: z.number().int().min(0).max(100).default(0),
-      consultationPaise: money.default(50000),
+      commissionPercent: z.number().int().min(0).max(100).default(40),
+      consultationPaise: money.default(30000),
+      visitingConsultationPaise: money.default(100000),
       branchId: id.optional(),
+      branchIds: z.array(id).max(100).optional(),
     }),
     refs: { branchId: 'branch', specialityId: 'speciality' },
   },
@@ -299,6 +303,17 @@ clinicApi.get(
 );
 // Names and referenced masters are validated inside the serialized clinic transaction.
 async function prepareMasterData(resource: string, data: any, store: any, old?: any) {
+  if (resource === 'doctors') {
+    if (data.branchIds !== undefined) {
+      data.branchIds = [...new Set(data.branchIds)];
+      assert(!data.branchId || data.branchIds.includes(data.branchId), 400, 'The primary branch must be one of the selected branches.');
+      data.branchId = data.branchIds[0] || null;
+    } else if (data.branchId !== undefined) data.branchIds = [data.branchId];
+    for (const branchId of data.branchIds || []) {
+      const branch = await store.get('branch', branchId);
+      assert(branch.active || (old && doctorBranches(old).includes(branchId) && data.active !== true), 409, 'Choose active branches for this doctor.');
+    }
+  }
   if (
     ['specialities', 'charge-groups', 'charges', 'catalog'].includes(resource) &&
     data.name !== undefined
@@ -455,7 +470,7 @@ async function validateSlot(store: any, data: any, ignoreId?: string) {
     const branch = await store.get('branch', data.branchId);
     assert(branch.active, 409, 'Branch is inactive.');
     assert(
-      !doctor.branchId || doctor.branchId === data.branchId,
+      doctorAvailableAt(doctor, data.branchId),
       409,
       'Doctor is assigned to a different branch.',
     );
@@ -547,7 +562,7 @@ clinicApi.delete(
   run('settings', async (req: any, res: any, { store, tx, tenant }: any, actor: any) => {
     const branch = await store.get('branch', id.parse(req.params.id));
     const linked = await Promise.all([
-      store.count('doctor', { branchId: branch.id }),
+      store.count('doctor', { OR: [{ branchId: branch.id }, { branchIds: { has: branch.id } }] }),
       store.count('patient', { branchId: branch.id }),
       store.count('appointment', { branchId: branch.id }),
       tx.membership.count({ where: { tenantId: tenant.id, branchId: branch.id } }),
@@ -739,11 +754,11 @@ async function staffAssignment(data: any, ctx: any, actor: any, old?: any) {
     const doctor = await store.get('doctor', doctorId);
     assert(data.active === false || doctor.active, 400, 'Choose an active doctor profile.');
     assert(
-      !assignedBranch || doctor.branchId === assignedBranch,
+      !assignedBranch || doctorBranches(doctor).includes(assignedBranch),
       400,
       'Doctor profile must belong to the selected branch.',
     );
-    assignedBranch = doctor.branchId || null;
+    assignedBranch = assignedBranch || doctor.branchId || null;
     assert(
       !(await tx.membership.findFirst({
         where: {

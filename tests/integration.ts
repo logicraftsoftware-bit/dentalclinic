@@ -785,6 +785,49 @@ test('team deletion protects owners and linked branches and revokes removed staf
   assert.equal(await db.branch.findUnique({ where: { id: branch.id } }), null);
 });
 
+test('doctors support both fees and selected branches without crossing clinic or staff scope', async () => {
+  const clinic = await register('Multi branch doctors');
+  await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { overrides: { branches: null, staff: null } } });
+  const create = async (resource: string, body: any) => {
+    const response = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie);
+    assert.equal(response.status, 201, JSON.stringify(response.data));
+    return response.data;
+  };
+  const first = await create('branches', { name: 'First' });
+  const second = await create('branches', { name: 'Second' });
+  const third = await create('branches', { name: 'Not selected' });
+  const doctor = await create('doctors', { name: 'Shared doctor', branchIds: [first.id, second.id], qualification: 'MDS' });
+  assert.deepEqual(doctor.branchIds, [first.id, second.id]);
+  assert.equal(doctor.consultationPaise, 30000);
+  assert.equal(doctor.visitingConsultationPaise, 100000);
+  assert.equal(doctor.commissionPercent, 40);
+  assert.equal(doctor.qualification, 'MDS');
+  for (const [i, branch] of [first, second].entries()) {
+    const patient = await create('patients', { name: `Branch patient ${i}`, phone: '9000000090', branchId: branch.id, doctorId: doctor.id });
+    await create('appointments', { patientId: patient.id, doctorId: doctor.id, branchId: branch.id, startsAt: new Date(Date.now() + (i + 1) * 86400000).toISOString() });
+  }
+  const patient = await create('patients', { name: 'Other patient', phone: '9000000091', branchId: third.id });
+  assert.equal((await request('/clinic/appointments', 'POST', { patientId: patient.id, doctorId: doctor.id, branchId: third.id, startsAt: new Date(Date.now() + 4 * 86400000).toISOString() }, clinic.cookie)).status, 409);
+  assert.equal((await request(`/clinic/branches/${second.id}`, 'DELETE', undefined, clinic.cookie)).status, 409);
+  const foreign = await db.branch.findFirstOrThrow({ where: { tenantId: b.tenantId } });
+  assert.equal((await request(`/clinic/doctors/${doctor.id}`, 'PATCH', { branchIds: [first.id, foreign.id] }, clinic.cookie)).status, 404);
+  const email = `${randomUUID()}@example.test`;
+  await create('staff', { name: 'Second branch admin', email, password, role: 'BRANCH_ADMIN', branchId: second.id });
+  const login = await request('/auth/login', 'POST', { email, password });
+  const visible = await request('/clinic/doctors', 'GET', undefined, login.cookie);
+  assert.equal(visible.status, 200);
+  assert.ok(visible.data.some((row: any) => row.id === doctor.id));
+  assert.equal((await request('/clinic/doctors', 'POST', { name: 'Unauthorized assignment', branchIds: [first.id, second.id] }, login.cookie)).status, 404);
+  const doctorEmail = `${randomUUID()}@example.test`;
+  await create('staff', { name: 'Shared doctor login', email: doctorEmail, password, role: 'DOCTOR', branchId: second.id, doctorId: doctor.id });
+  const doctorLogin = await request('/auth/login', 'POST', { email: doctorEmail, password });
+  assert.equal((await request('/clinic/workspace', 'GET', undefined, doctorLogin.cookie)).status, 200);
+  const fees = await request(`/clinic/doctors/${doctor.id}`, 'PATCH', { consultationPaise: 35000, visitingConsultationPaise: 110000, commissionPercent: 45 }, clinic.cookie);
+  assert.equal(fees.status, 200);
+  assert.deepEqual(fees.data.branchIds, [first.id, second.id]);
+  assert.equal(fees.data.visitingConsultationPaise, 110000);
+});
+
 let masterSpeciality: any, masterGroup: any, masterCharge: any;
 test('masters create on a clinic, normalize names and reject duplicate or invalid amounts', async () => {
   const speciality = await request(
