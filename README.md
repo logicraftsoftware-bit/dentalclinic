@@ -28,6 +28,20 @@ The Windows launcher `powershell -ExecutionPolicy Bypass -File .\scripts\start.p
 
 Follow [deployment instructions](docs/DEPLOYMENT.md). `vercel.json` routes `/api/*` to the Express function and other application pages to the Vite frontend. Database initialization and admin seeding are explicit operator steps, never part of the deployment build. Configure private S3 storage before uploading patient documents on Vercel. Supported PDFs/JPEGs/PNGs are limited to 3 MB per file.
 
+## Clinic masters
+
+Sign in as a clinic owner or manager and open **Masters**. The tabs provide:
+
+- Speciality master: speciality name.
+- Charge group master: group name.
+- Charge master: choose a group, charge name, charge and lab charge in rupees.
+
+Each supports search, editing and activation/deactivation. Duplicate names and invalid amounts are rejected within the clinic. Active doctors must be reassigned before their speciality can be deactivated; active charges must be moved or deactivated before their group is deactivated. Doctor forms select specialities from the master. Treatment plans can select a charge to fill the treatment name, patient price, lab charge and default sessions; custom treatment entry remains available.
+
+Existing treatment catalog entries appear in Charge master with an Unassigned group until edited. Existing doctor specialty text and historical treatment prices are retained. Lab charge is a separate recorded amount; it is not automatically added to the patient fee. New treatment items store their own price/lab snapshots, so master edits do not change previous care records. Full clinic exports include the masters.
+
+No database reset is required. New collections can be created on first use; run the normal db:push maintenance command against the intended database to install the declared indexes.
+
 ## Validation
 
 ```powershell

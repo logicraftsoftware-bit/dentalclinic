@@ -701,3 +701,57 @@ test('staff accounts sign in and use their membership without email verification
   assert.equal((await request('/auth/me', 'GET', undefined, login.cookie)).status, 200);
   assert.equal((await request('/clinic/patients', 'GET', undefined, login.cookie)).status, 200);
 });
+
+let masterSpeciality: any, masterGroup: any, masterCharge: any;
+test('masters create on a clinic, normalize names and reject duplicate or invalid amounts', async () => {
+  const speciality = await request('/clinic/specialities', 'POST', { name: '  Orthodontics  ' }, a.cookie);
+  assert.equal(speciality.status, 201, JSON.stringify(speciality.data));
+  masterSpeciality = speciality.data;
+  assert.equal(masterSpeciality.name, 'Orthodontics');
+  assert.equal((await request('/clinic/specialities', 'POST', { name: 'orthodontics' }, a.cookie)).status, 409);
+  const group = await request('/clinic/charge-groups', 'POST', { name: 'Laboratory services' }, a.cookie);
+  assert.equal(group.status, 201, JSON.stringify(group.data)); masterGroup = group.data;
+  const charge = await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'Ceramic crown', pricePaise: 250075, labChargePaise: 50025 }, a.cookie);
+  assert.equal(charge.status, 201, JSON.stringify(charge.data)); masterCharge = charge.data;
+  assert.equal(masterCharge.pricePaise, 250075); assert.equal(masterCharge.labChargePaise, 50025);
+  assert.equal((await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'ceramic crown', pricePaise: 1, labChargePaise: 0 }, a.cookie)).status, 409);
+  for (const invalid of [{ pricePaise: -1 }, { labChargePaise: -1 }, { pricePaise: 1.5 }]) {
+    assert.equal((await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'Invalid amount', pricePaise: 100, labChargePaise: 0, ...invalid }, a.cookie)).status, 400);
+  }
+  assert.equal((await request('/clinic/charges', 'GET', undefined, a.cookie)).data.some((row: any) => row.id === masterCharge.id), true);
+});
+
+test('master references and mutations remain tenant scoped and staff cannot manage them', async () => {
+  for (const [resource, row] of [['specialities', masterSpeciality], ['charge-groups', masterGroup], ['charges', masterCharge]] as const) {
+    assert.equal((await request(`/clinic/${resource}/${row.id}`, 'GET', undefined, b.cookie)).status, 404);
+    assert.equal((await request(`/clinic/${resource}/${row.id}`, 'PATCH', { name: 'Foreign edit' }, b.cookie)).status, 404);
+    assert.equal((await request(`/clinic/${resource}`, 'GET', undefined, b.cookie)).data.some((item: any) => item.id === row.id), false);
+  }
+  assert.equal((await request('/clinic/charges', 'POST', { chargeGroupId: masterGroup.id, name: 'Foreign group', pricePaise: 100 }, b.cookie)).status, 404);
+  assert.equal((await request('/clinic/doctors', 'POST', { name: 'Foreign speciality', specialityId: masterSpeciality.id }, b.cookie)).status, 404);
+  const member = await db.membership.findFirstOrThrow({ where: { tenantId: a.tenantId, role: 'RECEPTIONIST' }, include: { user: true } });
+  const cookie = (await request('/auth/login', 'POST', { email: member.user.email, password })).cookie;
+  assert.equal((await request('/clinic/charges', 'GET', undefined, cookie)).status, 200);
+  assert.equal((await request('/clinic/specialities', 'POST', { name: 'Unauthorized master' }, cookie)).status, 403);
+  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: false }, cookie)).status, 403);
+});
+
+test('master edits, dependencies and deactivation preserve treatment price and lab snapshots', async () => {
+  assert.equal((await request(`/clinic/doctors/${doctorA.id}`, 'PATCH', { specialityId: masterSpeciality.id }, a.cookie)).status, 200);
+  assert.equal((await request(`/clinic/specialities/${masterSpeciality.id}`, 'PATCH', { active: false }, a.cookie)).status, 409);
+  assert.equal((await request(`/clinic/specialities/${masterSpeciality.id}`, 'PATCH', { name: 'Orthodontic care' }, a.cookie)).status, 200);
+  assert.equal((await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: false }, a.cookie)).status, 409);
+  const plan = (await request('/clinic/plans', 'POST', { patientId: patientA.id, title: 'Master charge snapshots' }, a.cookie)).data;
+  const item = await request('/clinic/items', 'POST', { planId: plan.id, tooth: '26', name: masterCharge.name, pricePaise: masterCharge.pricePaise, labChargePaise: masterCharge.labChargePaise, catalogItemId: masterCharge.id, plannedSessions: 1 }, a.cookie);
+  assert.equal(item.status, 201, JSON.stringify(item.data));
+  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { name: 'Updated ceramic crown', pricePaise: 999900, labChargePaise: 123400 }, a.cookie)).status, 200);
+  const saved = (await request(`/clinic/items/${item.data.id}`, 'GET', undefined, a.cookie)).data;
+  assert.equal(saved.name, 'Ceramic crown'); assert.equal(saved.pricePaise, 250075); assert.equal(saved.labChargePaise, 50025);
+  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: false }, a.cookie)).status, 200);
+  assert.equal((await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: false }, a.cookie)).status, 200);
+  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: true }, a.cookie)).status, 409);
+  assert.equal((await request('/clinic/charges?active=true', 'GET', undefined, a.cookie)).data.some((row: any) => row.id === masterCharge.id), false);
+  assert.equal((await request('/clinic/items', 'POST', { planId: plan.id, tooth: '27', name: 'Inactive charge', catalogItemId: masterCharge.id, pricePaise: 100 }, a.cookie)).status, 409);
+  assert.equal((await request(`/clinic/charge-groups/${masterGroup.id}`, 'PATCH', { active: true }, a.cookie)).status, 200);
+  assert.equal((await request(`/clinic/charges/${masterCharge.id}`, 'PATCH', { active: true }, a.cookie)).status, 200);
+});

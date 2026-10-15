@@ -72,12 +72,13 @@ const schemas: Record<
       email: z.union([z.string().email(), z.literal('')]).default(''),
       phone: string,
       specialty: z.string().max(200).default('General Dentistry'),
+      specialityId: id.optional(),
       registrationNumber: string,
       commissionPercent: z.number().int().min(0).max(100).default(0),
       consultationPaise: money.default(50000),
       branchId: id.optional(),
     }),
-    refs: { branchId: 'branch' },
+    refs: { branchId: 'branch', specialityId: 'speciality' },
   },
   branches: {
     model: 'branch',
@@ -136,12 +137,21 @@ const schemas: Record<
     }),
     refs: { patientId: 'patient' },
   },
+  specialities: { model: 'speciality', cap: 'settings', schema: z.object({ name: text }) },
+  'charge-groups': { model: 'chargeGroup', cap: 'settings', schema: z.object({ name: text }) },
+  charges: {
+    model: 'catalogItem', cap: 'settings',
+    schema: z.object({ chargeGroupId: id, name: text, pricePaise: money, labChargePaise: money.default(0), sessions: z.number().int().min(1).max(30).default(1) }),
+    refs: { chargeGroupId: 'chargeGroup' },
+  },
   catalog: {
     model: 'catalogItem',
     cap: 'settings',
     schema: z.object({
       name: text,
       pricePaise: money,
+      labChargePaise: money.default(0),
+      chargeGroupId: id.optional(),
       sessions: z.number().int().min(1).max(30).default(1),
     }),
   },
@@ -156,12 +166,14 @@ const schemas: Record<
     cap: 'clinical',
     schema: z.object({
       planId: id,
+      catalogItemId: id.optional(),
+      labChargePaise: money.default(0),
       tooth: z.string().regex(/^(?:[1-4][1-8]|[5-8][1-5])$/),
       name: text,
       pricePaise: money,
       plannedSessions: z.number().int().min(1).max(30).default(1),
     }),
-    refs: { planId: 'treatmentPlan' },
+    refs: { planId: 'treatmentPlan', catalogItemId: 'catalogItem' },
   },
   prescriptions: {
     model: 'prescription',
@@ -255,10 +267,42 @@ clinicApi.get(
     true,
   ),
 );
+// Names and referenced masters are validated inside the serialized clinic transaction.
+async function prepareMasterData(resource: string, data: any, store: any, old?: any) {
+  if (['specialities', 'charge-groups', 'charges', 'catalog'].includes(resource) && data.name !== undefined) {
+    data.name = data.name.trim().replace(/\s+/g, ' ');
+    const model = schemas[resource].model;
+    const duplicates = await store.count(model, { name: { equals: data.name, mode: 'insensitive' }, ...(old ? { id: { not: old.id } } : {}) });
+    assert(!duplicates, 409, 'A master with this name already exists in your clinic.');
+    if (['specialities', 'charge-groups'].includes(resource)) data.nameKey = data.name.toLowerCase();
+  }
+  if (resource === 'doctors' && (data.specialityId || old?.specialityId)) {
+    const speciality = await store.get('speciality', data.specialityId || old.specialityId);
+    assert(speciality.active || (old?.specialityId === speciality.id && data.active !== true), 409, 'Select an active speciality.');
+    data.specialty = speciality.name;
+  }
+  if (['charges', 'catalog'].includes(resource)) {
+    const groupId = data.chargeGroupId || old?.chargeGroupId;
+    if (groupId) {
+      const group = await store.get('chargeGroup', groupId);
+      assert(group.active || (old?.chargeGroupId === group.id && data.active !== true), 409, 'Select an active charge group.');
+    }
+  }
+  if (resource === 'items' && data.catalogItemId) {
+    const charge = await store.get('catalogItem', data.catalogItemId);
+    assert(charge.active, 409, 'Select an active charge.');
+    if (charge.chargeGroupId) assert((await store.get('chargeGroup', charge.chargeGroupId)).active, 409, 'The charge group is inactive.');
+    data.name = charge.name;
+  }
+  if (old && data.active === false) {
+    if (resource === 'specialities') assert(!(await store.count('doctor', { specialityId: old.id, active: true })), 409, 'Reassign active doctors before deactivating this speciality.');
+    if (resource === 'charge-groups') assert(!(await store.count('catalogItem', { chargeGroupId: old.id, active: true })), 409, 'Deactivate or reassign charges before deactivating this group.');
+  }
+}
 for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
   // Catalog is readable by the clinical/reception team; settings permission is required for changes.
   const readCap =
-    resource === 'catalog'
+    ['catalog', 'charges', 'charge-groups', 'specialities'].includes(resource)
       ? 'catalog'
       : ['doctors', 'branches'].includes(resource)
         ? 'dashboard'
@@ -284,9 +328,11 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
         resource !== 'patients'
       )
         where.patientId = id.parse(req.query.patientId);
+      if (req.query.active !== undefined && ['catalog', 'charges', 'specialities', 'charge-groups'].includes(resource)) where.active = z.enum(['true', 'false']).parse(req.query.active) === 'true';
+      if (req.query.chargeGroupId && ['catalog', 'charges'].includes(resource)) where.chargeGroupId = id.parse(req.query.chargeGroupId);
       if (req.query.planId && resource === 'items') where.planId = id.parse(req.query.planId);
       if (req.query.itemId && resource === 'sessions') where.itemId = id.parse(req.query.itemId);
-      if (req.query.q && ['patients', 'doctors', 'catalog', 'branches'].includes(resource))
+      if (req.query.q && ['patients', 'doctors', 'catalog', 'branches', 'charges', 'specialities', 'charge-groups'].includes(resource))
         where.name = { contains: z.string().max(100).parse(req.query.q), mode: 'insensitive' };
       const rows = await store.list(config.model, where, {
         orderBy: { createdAt: 'desc' },
@@ -316,6 +362,7 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
       for (const [field, model] of Object.entries(c.refs || {}))
         if (data[field]) await store.get(model, data[field]);
       if (['notes', 'charts', 'prescriptions'].includes(resource)) data.authorId = actor.userId;
+      await prepareMasterData(resource, data, store);
       if (resource === 'appointments') await validateSlot(store, data);
       const row = await store.create(c.model, data);
       await store.audit(actor.userId, `${resource}.created`, row.id);
@@ -383,7 +430,7 @@ clinicApi.patch(
     res.json(row);
   }),
 );
-for (const resource of ['doctors', 'branches', 'catalog'])
+for (const resource of ['doctors', 'branches', 'catalog', 'specialities', 'charge-groups', 'charges'])
   clinicApi.patch(
     `/${resource}/:id`,
     run('settings', async (req: any, res: any, { store, subscription }: any, actor: any) => {
@@ -401,6 +448,7 @@ for (const resource of ['doctors', 'branches', 'catalog'])
         );
       for (const [field, model] of Object.entries(c.refs || {}))
         if (data[field]) await store.get(model, data[field]);
+      await prepareMasterData(resource, data, store, old);
       const row = await store.update(c.model, old.id, data);
       await store.audit(actor.userId, `${resource}.updated`, old.id);
       res.json(row);
@@ -757,6 +805,7 @@ clinicApi.get(
     const patientId = req.query.patientId ? id.parse(req.query.patientId) : null;
     if (patientId) await store.get('patient', patientId);
     const result: Record<string, unknown> = {};
+    if (!patientId) for (const model of ['speciality', 'chargeGroup', 'catalogItem'] as OwnedModel[]) result[model] = await store.list(model);
     for (const model of [
       'patient',
       'appointment',

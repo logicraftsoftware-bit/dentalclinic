@@ -1,3 +1,4 @@
+import { ClinicMasters } from './masters';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -52,6 +53,7 @@ type Field = {
   options?: { value: string; label: string }[];
   value?: any;
   hint?: string;
+  updates?: Record<string, Record<string, any>>;
 };
 type Modal = {
   title: string;
@@ -68,6 +70,7 @@ const clinicNav = [
   ['billing', 'Billing & payments', Wallet],
   ['doctors', 'Doctors', Stethoscope],
   ['team', 'Team & branches', Building2],
+  ['masters', 'Masters', ClipboardList],
   ['reports', 'Reports', TrendingUp],
 ] as const;
 const adminNav = [
@@ -235,7 +238,7 @@ function App() {
     setAuthScreen('home');
   };
   currentWorkspace = workspace;
-  const common = { modal: setModal, action, notify, tick, workspace, search, setPatient };
+  const common = { modal: setModal, action, notify, tick, workspace, search, setPatient, navigate };
   if (!ready)
     return (
       <div className="loading-page">
@@ -427,6 +430,8 @@ function App() {
                 <Doctors {...common} />
               ) : screen === 'team' ? (
                 <Team {...common} />
+              ) : screen === 'masters' ? (
+                <ClinicMasters {...common} />
               ) : screen === 'reports' ? (
                 <Reports {...common} />
               ) : screen === 'settings' ? (
@@ -1260,12 +1265,19 @@ function printInvoice(i: any, w: any, p: any, payments: any[] = []) {
 function Doctors({ tick, modal, action }: any) {
   const { data, error } = useData('/clinic/doctors', tick);
   const { data: commissions } = useData('/clinic/commissions', tick);
+  const { data: specialities } = useData('/clinic/specialities', tick);
+  const specialityField = (doctor?: any): Field => ({
+    key: 'specialityId', label: 'Speciality', type: 'select', required: !doctor?.specialty,
+    value: doctor?.specialityId || '',
+    options: [{ value: '', label: doctor?.specialty || 'Choose speciality' }, ...(specialities || []).filter((row: any) => row.active || row.id === doctor?.specialityId).map((row: any) => ({ value: row.id, label: row.name }))],
+    hint: 'Manage available specialities in Masters.',
+  });
   const add = () =>
     modal({
       title: 'Add a doctor',
       fields: [
         { key: 'name', label: 'Full name', required: true },
-        { key: 'specialty', label: 'Specialty', value: 'General Dentistry' },
+        specialityField(),
         { key: 'registrationNumber', label: 'Dental council registration' },
         { key: 'email', label: 'Email', type: 'email' },
         { key: 'phone', label: 'Phone' },
@@ -1289,7 +1301,7 @@ function Doctors({ tick, modal, action }: any) {
   return (
     <>
       <PageTitle title="Your care team" subtitle="Great care starts with great people.">
-        <button className="primary" onClick={add}>
+        <button className="primary" onClick={add} disabled={!specialities}>
           <Plus size={17} />
           Add doctor
         </button>
@@ -1309,7 +1321,7 @@ function Doctors({ tick, modal, action }: any) {
                 <Badge value={d.active ? 'ACTIVE' : 'Inactive'} />
               </div>
               <h2>{d.name}</h2>
-              <p>{d.specialty}</p>
+              <p>{specialities?.find((row: any) => row.id === d.specialityId)?.name || d.specialty}</p>
               <small>{d.registrationNumber || 'Registration not recorded'}</small>
               <div className="doctor-card-details">
                 <span>
@@ -1327,7 +1339,7 @@ function Doctors({ tick, modal, action }: any) {
                       title: 'Edit doctor',
                       fields: [
                         { key: 'name', label: 'Name', value: d.name, required: true },
-                        { key: 'specialty', label: 'Specialty', value: d.specialty },
+                        specialityField(d),
                         {
                           key: 'consultationPaise',
                           label: 'Consultation fee (₹)',
@@ -2330,12 +2342,16 @@ function ToothChart({ patientId, tick, action }: any) {
 function TreatmentCard({ plan, tick, modal, action }: any) {
   const { data: items } = useData(`/clinic/items?planId=${plan.id}`, tick);
   const addItem = async () => {
-    const catalog = await api('/clinic/catalog');
+    const catalog = await api('/clinic/charges?active=true');
     modal({
       title: 'Add tooth-wise treatment',
       fields: [
         { key: 'tooth', label: 'FDI tooth number (e.g. 36)', required: true },
+        { key: 'catalogItemId', label: 'Charge master', type: 'select', value: '',
+          options: catalog.map((row: any) => ({ value: row.id, label: row.name })),
+          updates: Object.fromEntries(catalog.map((row: any) => [row.id, { name: row.name, pricePaise: row.pricePaise / 100, labChargePaise: (row.labChargePaise || 0) / 100, plannedSessions: row.sessions }])) },
         { key: 'name', label: 'Treatment name', required: true, value: catalog[0]?.name || '' },
+        { key: 'labChargePaise', label: 'Lab charge (₹)', type: 'money', required: true, value: (catalog[0]?.labChargePaise || 0) / 100 },
         {
           key: 'pricePaise',
           label: 'Total treatment price (₹)',
@@ -2446,6 +2462,7 @@ function TreatmentItemView({ item: i, tick, modal, action, accepted }: any) {
         <span className="tooth-number">{i.tooth}</span>
         <div>
           <h3>{i.name}</h3>
+          <p className="muted">Lab charge: {money(i.labChargePaise || 0)}</p>
           <small>
             {sessions?.length || 0} of {i.plannedSessions} sessions · {money(i.pricePaise)}
           </small>
@@ -2490,9 +2507,9 @@ async function download(url: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
 }
-function ClinicSettings({ workspace, tick, modal, action }: any) {
+function ClinicSettings({ workspace, tick, modal, action, navigate }: any) {
   currentWorkspace = workspace;
-  const { data: catalog, error } = useData('/clinic/catalog', tick);
+
   const t = workspace?.tenant;
   if (!t) return <DataError />;
   return (
@@ -2612,92 +2629,10 @@ function ClinicSettings({ workspace, tick, modal, action }: any) {
         </section>
       </div>
       <section className="panel section-gap">
-        <div className="panel-heading">
-          <div>
-            <h2>Treatment catalog</h2>
-            <p>Your clinic’s consultation and treatment pricing.</p>
-          </div>
-          <button className="secondary small" onClick={() => catalogModal(modal, action)}>
-            <Plus size={15} />
-            Add treatment
-          </button>
-        </div>
-        {!catalog ? (
-          <DataError error={error} />
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Treatment</th>
-                  <th>Price</th>
-                  <th>Sessions</th>
-                  <th>Status</th>
-                  <th>Edit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {catalog.map((c: any) => (
-                  <tr key={c.id}>
-                    <td>
-                      <strong>{c.name}</strong>
-                    </td>
-                    <td>{money(c.pricePaise)}</td>
-                    <td>{c.sessions}</td>
-                    <td>
-                      <Badge value={c.active ? 'ACTIVE' : 'Inactive'} />
-                    </td>
-                    <td>
-                      <button
-                        className="text-button"
-                        onClick={() => catalogModal(modal, action, c)}
-                      >
-                        Edit pricing
-                      </button>
-                      <button
-                        className="text-button"
-                        onClick={() =>
-                          action(() =>
-                            api(`/clinic/catalog/${c.id}`, 'PATCH', { active: !c.active }),
-                          ).catch(() => {})
-                        }
-                      >
-                        {c.active ? 'Disable' : 'Enable'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="panel-heading"><div><h2>Clinic masters</h2><p>Manage specialities, charge groups, charges and lab charges in one place.</p></div><button className="secondary small" onClick={() => navigate('masters')}>Open masters</button></div>
       </section>
     </>
   );
-}
-function catalogModal(modal: any, action: any, c?: any) {
-  modal({
-    title: c ? 'Edit treatment pricing' : 'Add treatment pricing',
-    fields: [
-      { key: 'name', label: 'Treatment name', required: true, value: c?.name },
-      {
-        key: 'pricePaise',
-        label: 'Price (₹)',
-        type: 'money',
-        required: true,
-        value: c?.pricePaise / 100,
-      },
-      {
-        key: 'sessions',
-        label: 'Default sessions',
-        type: 'number',
-        value: c?.sessions || 1,
-        required: true,
-      },
-    ],
-    submit: (d: any) =>
-      action(() => api(c ? `/clinic/catalog/${c.id}` : '/clinic/catalog', c ? 'PATCH' : 'POST', d)),
-  });
 }
 function Subscription({ tick, modal, action }: any) {
   const { data: d, error } = useData('/subscription', tick);
@@ -3121,7 +3056,7 @@ function FormModal({ modal, close, notify, refresh }: any) {
                         aria-label={f.label}
                         required={f.required}
                         value={values[f.key]}
-                        onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+                        onChange={(e) => setValues({ ...values, [f.key]: e.target.value, ...f.updates?.[e.target.value] })}
                       >
                         {!f.required && <option value="">Choose an option</option>}
                         {f.options?.map((o) => (

@@ -191,6 +191,7 @@ model Doctor {
   email String @default("")
   phone String @default("")
   specialty String @default("General Dentistry")
+  specialityId String?
   registrationNumber String @default("")
   commissionPercent Int @default(0)
   consultationPaise Int @default(50000)
@@ -272,6 +273,8 @@ model ChartVersion {
   @@index([tenantId])
 }
 model CatalogItem {
+  chargeGroupId String?
+  labChargePaise Int @default(0)
   id String @id @default(uuid()) @map("_id")
   tenantId String
   name String
@@ -295,6 +298,8 @@ model TreatmentPlan {
   @@index([tenantId])
 }
 model TreatmentItem {
+  catalogItemId String?
+  labChargePaise Int @default(0)
   id String @id @default(uuid()) @map("_id")
   tenantId String
   planId String
@@ -474,4 +479,25 @@ model CronState {
   cursor String @default("")
   owner String @default("")
   leaseExpiresAt DateTime @default(now())
+}
+
+model Speciality {
+  id String @id @default(uuid()) @map("_id")
+  tenantId String
+  name String
+  nameKey String
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@unique([tenantId, nameKey])
+}
+model ChargeGroup {
+  id String @id @default(uuid()) @map("_id")
+  tenantId String
+  name String
+  nameKey String
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@unique([tenantId, nameKey])
 }

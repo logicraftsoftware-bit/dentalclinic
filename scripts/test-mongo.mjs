@@ -13,6 +13,12 @@ try {
   await run('node_modules/prisma/build/index.js', ['db', 'push']);
   await run('node_modules/tsx/dist/cli.mjs', ['scripts/mongo-indexes.ts']);
   await run('node_modules/tsx/dist/cli.mjs', ['prisma/seed.ts']);
+  // Simulate an existing deployment that has not run db:push for the new masters yet.
+  // This database was just created by this runner and is always an isolated localhost replica set.
+  const { PrismaClient } = await import('@prisma/client');
+  const setup = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
+  try { for (const collection of ['Speciality', 'ChargeGroup']) await setup.$runCommandRaw({ drop: collection }); }
+  finally { await setup.$disconnect(); }
   await run('node_modules/tsx/dist/cli.mjs', ['--test', 'tests/security.test.ts', 'tests/time.test.ts']);
   await run('node_modules/tsx/dist/cli.mjs', ['--test', 'tests/integration.ts']);
   if (process.argv.includes('--browser')) await run('node_modules/@playwright/test/cli.js', ['test']);

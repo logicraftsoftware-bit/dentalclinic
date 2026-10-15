@@ -122,6 +122,8 @@ export const ownedModels = [
   'clinicalNote',
   'chartVersion',
   'catalogItem',
+  'speciality',
+  'chargeGroup',
   'treatmentPlan',
   'treatmentItem',
   'treatmentSession',
@@ -166,9 +168,10 @@ export class TenantStore {
   }
   private async validateReferences(name: OwnedModel, data: Record<string, unknown>) {
     const references: Partial<Record<OwnedModel, Record<string, OwnedModel>>> = {
-      doctor: { branchId: 'branch' }, appointment: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
+      doctor: { branchId: 'branch', specialityId: 'speciality' }, appointment: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
       clinicalNote: { patientId: 'patient' }, chartVersion: { patientId: 'patient' }, treatmentPlan: { patientId: 'patient' },
-      treatmentItem: { planId: 'treatmentPlan' }, treatmentSession: { itemId: 'treatmentItem', doctorId: 'doctor' },
+      treatmentItem: { planId: 'treatmentPlan', catalogItemId: 'catalogItem' }, treatmentSession: { itemId: 'treatmentItem', doctorId: 'doctor' },
+      catalogItem: { chargeGroupId: 'chargeGroup' },
       invoice: { patientId: 'patient', sessionId: 'treatmentSession' }, payment: { invoiceId: 'invoice' },
       commission: { doctorId: 'doctor', paymentId: 'payment' }, document: { patientId: 'patient' },
       prescription: { patientId: 'patient' }, followUp: { patientId: 'patient' }, communication: { patientId: 'patient' },
