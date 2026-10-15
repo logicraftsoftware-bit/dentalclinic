@@ -1,3 +1,4 @@
+import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
 import { ClinicMasters } from './masters';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -190,8 +191,6 @@ function Logo({ name = 'DentaFlow' }: { name?: string }) {
 function App() {
   const [me, setMe] = useState<any>(null),
     [ready, setReady] = useState(false),
-    [screen, setScreen] = useState('dashboard'),
-    [mode, setMode] = useState('clinic'),
     [workspace, setWorkspace] = useState<any>(null),
     [publicPlans, setPublicPlans] = useState<any[]>([]),
     [publicSettings, setPublicSettings] = useState<any>({}),
@@ -201,8 +200,15 @@ function App() {
     [tick, setTick] = useState(0),
     [mobile, setMobile] = useState(false),
     [search, setSearch] = useState(''),
-    [patient, setPatient] = useState<any>(null),
-    [authScreen, setAuthScreen] = useState('home');
+    [patient, setPatientData] = useState<any>(null);
+  const { route, location, go } = usePageRoute();
+  const mode = route.area === 'admin' ? 'admin' : 'clinic';
+  const screen = route.area === 'public' ? 'dashboard' : route.screen;
+  const authScreen = route.area === 'public' ? route.screen : 'login';
+  const setAuthScreen = (page: string) =>
+    go(page === 'features' || page === 'pricing' ? `/#${page}` : publicPages[page]?.path || '/');
+  const setPatient = (record: any) =>
+    go(record ? `/clinic/patients/${record.id}` : '/clinic/patients');
   const refresh = () => setTick((t) => t + 1);
   const notify = (message: string) => {
     setToast(message);
@@ -226,10 +232,6 @@ function App() {
       api('/auth/me')
         .then((u) => {
           setMe(u);
-          if (u.platformAdmin && !u.tenantId) {
-            setMode('admin');
-            setScreen('platform');
-          }
         })
         .catch(() => {}),
     ]).finally(() => setReady(true));
@@ -242,8 +244,7 @@ function App() {
   }, [me, tick]);
   const navigate = (s: string) => {
     if (mode === 'clinic' && screenCaps[s] && !can(workspace, screenCaps[s])) return;
-    setScreen(s);
-    setPatient(null);
+    go(workspacePath(mode, s));
     setSearch('');
     setMobile(false);
     setError('');
@@ -253,18 +254,72 @@ function App() {
       .then(() => {
         setMe(null);
         setWorkspace(null);
-        setAuthScreen('home');
+        go('/login');
       })
       .catch(() => {});
   const signedIn = async () => {
     const u = await api('/auth/me');
     setMe(u);
-    setMode(u.platformAdmin && !u.tenantId ? 'admin' : 'clinic');
-    setScreen(u.platformAdmin && !u.tenantId ? 'platform' : 'dashboard');
-    setAuthScreen('home');
+    go(loginDestination(route.next, u), true);
   };
+  useEffect(() => {
+    if (!ready || route.notFound) return;
+    if (!me && route.area !== 'public') go(`/login?next=${encodeURIComponent(location)}`, true);
+    else if (me && route.area === 'public') go(loginDestination(route.next, me), true);
+  }, [ready, me, location]);
+  useEffect(() => {
+    document.title = `${route.title} | DentaFlow`;
+    if (window.location.hash)
+      requestAnimationFrame(() =>
+        document.getElementById(window.location.hash.slice(1))?.scrollIntoView(),
+      );
+  }, [location, ready]);
+  useEffect(() => {
+    let active = true;
+    setPatientData(null);
+    setError('');
+    setModal(null);
+    if (me && workspace && route.patientId && can(workspace, 'patients')) {
+      api(`/clinic/patients/${route.patientId}`)
+        .then((p) => {
+          if (active) setPatientData(p);
+        })
+        .catch((e) => {
+          if (active) setError(e.message);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [route.patientId, me, workspace?.role, workspace?.branchId, workspace?.doctorId]);
+  useEffect(() => {
+    setModal(null);
+    setError('');
+    setMobile(false);
+  }, [location]);
+  const patientCapability =
+    route.patientId && route.tab && route.tab !== 'overview'
+      ? route.tab === 'billing'
+        ? 'billing'
+        : route.tab === 'documents'
+          ? 'documents'
+          : route.tab === 'follow-ups'
+            ? 'patients'
+            : 'clinical'
+      : 'patients';
   currentWorkspace = workspace;
-  const common = { modal: setModal, action, notify, tick, workspace, search, setPatient, navigate };
+  const common = {
+    modal: setModal,
+    action,
+    notify,
+    tick,
+    workspace,
+    search,
+    setPatient,
+    navigate,
+    route,
+    go,
+  };
   if (!ready)
     return (
       <div className="loading-page">
@@ -274,7 +329,18 @@ function App() {
     );
   return (
     <>
-      {!me ? (
+      {route.notFound ? (
+        <div className="loading-page">
+          <Logo />
+          <h1>Page not found</h1>
+          <button
+            className="primary"
+            onClick={() => go(me ? loginDestination(undefined, me) : '/')}
+          >
+            Go home
+          </button>
+        </div>
+      ) : !me ? (
         <PublicSite
           plans={publicPlans}
           settings={publicSettings}
@@ -355,8 +421,7 @@ function App() {
               {me.platformAdmin && (
                 <button
                   onClick={() => {
-                    setMode(mode === 'admin' ? 'clinic' : 'admin');
-                    navigate(mode === 'admin' ? 'dashboard' : 'platform');
+                    go(mode === 'admin' ? '/clinic/dashboard' : '/admin/platform');
                   }}
                 >
                   <ShieldCheck size={19} />
@@ -411,10 +476,8 @@ function App() {
                   className="top-search"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (mode === 'clinic') {
-                      setScreen('patients');
-                      setPatient(null);
-                    } else setScreen('clinics');
+                    if (mode === 'clinic' && can(workspace, 'patients')) go('/clinic/patients');
+                    else if (mode === 'admin') go('/admin/clinics');
                   }}
                 >
                   <Search size={17} />
@@ -445,9 +508,20 @@ function App() {
                   </button>
                 </div>
               )}
-              {mode === 'admin' ? (
+              {(mode === 'admin' && !me.platformAdmin) ||
+              (mode === 'clinic' &&
+                workspace &&
+                (!can(workspace, screenCaps[screen] || 'dashboard') ||
+                  (route.patientId && !can(workspace, patientCapability)))) ? (
+                <section className="panel panel-body">
+                  <h1>Access restricted</h1>
+                  <p>Your role does not permit this page.</p>
+                </section>
+              ) : mode === 'admin' ? (
                 <Admin screen={screen} {...common} />
-              ) : patient ? (
+              ) : route.patientId && (!patient || patient.id !== route.patientId) ? (
+                <DataError error={error} />
+              ) : route.patientId && patient ? (
                 <PatientDetail patient={patient} back={() => setPatient(null)} {...common} />
               ) : screen === 'dashboard' ? (
                 <Dashboard {...common} navigate={navigate} name={me.name} />
@@ -1899,10 +1973,23 @@ function Reports({ tick }: any) {
     </>
   );
 }
-function PatientDetail({ patient: initialPatient, back, tick, modal, action, workspace }: any) {
+function PatientDetail({
+  patient: initialPatient,
+  back,
+  tick,
+  modal,
+  action,
+  workspace,
+  route,
+  go,
+}: any) {
   const { data: livePatient } = useData(`/clinic/patients/${initialPatient.id}`, tick);
   const p = livePatient || initialPatient;
-  const [tab, setTab] = useState('Overview');
+  const tab = patientTabs[route.tab || 'overview'];
+  const setTab = (label: string) => {
+    const key = Object.keys(patientTabs).find((k) => patientTabs[k] === label) || 'overview';
+    go(`/clinic/patients/${p.id}${key === 'overview' ? '' : `/${key}`}`);
+  };
   const { data: notes } = useData(
       can(workspace, 'clinical') ? `/clinic/notes?patientId=${p.id}` : '',
       tick,
@@ -4128,10 +4215,22 @@ function PublicSite({ plans, settings, screen, setScreen, signedIn }: any) {
           <Logo name={settings.productName} />
         </button>
         <nav>
-          <a href="#features" onClick={() => setScreen('home')}>
+          <a
+            href="/#features"
+            onClick={(e) => {
+              e.preventDefault();
+              setScreen('features');
+            }}
+          >
             Features
           </a>
-          <a href="#pricing" onClick={() => setScreen('home')}>
+          <a
+            href="/#pricing"
+            onClick={(e) => {
+              e.preventDefault();
+              setScreen('pricing');
+            }}
+          >
             Pricing
           </a>
           <button onClick={link('about')}>About</button>

@@ -5,6 +5,19 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 mkdirSync('.tools/screenshots', { recursive: true });
+// Only the runner-owned ephemeral database may have its request counters reset.
+test.beforeEach(async () => {
+  const uri = new URL(process.env.DATABASE_URL || 'mongodb://invalid/');
+  if (uri.hostname === '127.0.0.1' && uri.pathname === '/dentaflow_test') {
+    const setup = new PrismaClient();
+    try {
+      await setup.rateBucket.deleteMany();
+    } finally {
+      await setup.$disconnect();
+    }
+  }
+});
+
 test('marketing pages work on desktop and mobile without horizontal overflow', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -19,6 +32,8 @@ test('marketing pages work on desktop and mobile without horizontal overflow', a
   await page.screenshot({ path: '.tools/screenshots/marketing-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Privacy policy', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Privacy & data ownership' })).toBeVisible();
+  await expect(page).toHaveURL(/\/privacy$/);
+  await expect(page).toHaveTitle('Privacy & data ownership | DentaFlow');
   expect(errors).toEqual([]);
 });
 test('platform administrator configures plans and audits clinic status without clinical membership', async ({
@@ -303,4 +318,64 @@ test('staff creation selects branch and each role opens its permitted panel', as
       fullPage: true,
     });
   }
+});
+
+test('shared named URLs survive sign-in, refresh and browser history', async ({ page }) => {
+  const headers = { Origin: 'http://localhost:5173' };
+  const email = `${randomUUID()}@example.test`,
+    password = 'Shared-Link-Password-123';
+  const plans = await (await page.request.get('/api/public/plans')).json();
+  const signup = await page.request.post('/api/auth/register', {
+    headers,
+    data: {
+      clinicName: 'Shared links clinic',
+      name: 'Link owner',
+      email,
+      password,
+      phone: '9876543210',
+      planId: plans.find((p: any) => p.name === 'Enterprise').id,
+      acceptTerms: true,
+    },
+  });
+  expect(signup.status()).toBe(201);
+  await page.request.post('/api/auth/login', { headers, data: { email, password } });
+  const created = await page.request.post('/api/clinic/patients', {
+    headers,
+    data: { name: 'Shared record patient', phone: '9000000099' },
+  });
+  expect(created.status()).toBe(201);
+  const patient = await created.json();
+  await page.request.post('/api/auth/logout', { headers });
+  const shared = `/clinic/patients/${patient.id}/tooth-chart`;
+  await page.goto(shared);
+  await expect(page).toHaveURL(new RegExp('/login\\?next='));
+  await expect(page).toHaveTitle('Log in | DentaFlow');
+  await page.getByLabel('Email address', { exact: true }).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in to your workspace', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(shared + '$'));
+  await expect(
+    page.getByRole('heading', { name: 'Shared record patient', exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveTitle('Patient record - Tooth chart | DentaFlow');
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Tooth 36: Healthy', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Billing', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/clinic/patients/${patient.id}/billing$`));
+  await expect(page).toHaveTitle('Patient record - Billing | DentaFlow');
+  await page.goBack();
+  await expect(page).toHaveTitle('Patient record - Tooth chart | DentaFlow');
+  await page.goForward();
+  await expect(page).toHaveTitle('Patient record - Billing | DentaFlow');
+  await page.locator('.sidebar nav').getByRole('button', { name: 'Masters', exact: true }).click();
+  await page.getByRole('tab', { name: 'Charge master', exact: true }).click();
+  await expect(page).toHaveURL(/\/clinic\/masters\/charges$/);
+  await expect(page).toHaveTitle('Charge master | DentaFlow');
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Charge master', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.goto('/unknown-page');
+  await expect(page.getByRole('heading', { name: 'Page not found', exact: true })).toBeVisible();
 });
