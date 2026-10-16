@@ -499,6 +499,7 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
       for (const [field, model] of Object.entries(c.refs || {}))
         if (data[field]) await store.get(model, data[field]);
       if (['notes', 'charts', 'prescriptions'].includes(resource)) data.authorId = actor.userId;
+      if (resource === 'items') assert(!(await store.list('dentalEncounter', { planId: data.planId, status: { not: 'DRAFT' } })).length, 409, 'This visit is closed. Add treatment in a new appointment.');
       await prepareMasterData(resource, data, store);
       if (resource === 'appointments') {
         await validateSlot(store, data);
@@ -644,7 +645,9 @@ clinicApi.patch(
       .object({ status: z.enum(['PROPOSED', 'ACCEPTED', 'COMPLETED', 'CANCELLED']) })
       .strict()
       .parse(req.body);
-    const row = await store.update('treatmentPlan', id.parse(req.params.id), data);
+    const planId = id.parse(req.params.id);
+    assert(!(await store.list('dentalEncounter', { planId, status: { not: 'DRAFT' } })).length, 409, 'This treatment visit is closed. Schedule a new appointment to continue care.');
+    const row = await store.update('treatmentPlan', planId, data);
     await store.audit(actor.userId, 'plan.status', row.id);
     res.json(row);
   }),

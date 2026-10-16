@@ -1513,6 +1513,8 @@ test('doctor treatment closes into reception billing and a cross-branch internal
   async function close() { const r=await fetch(root+`/clinic/dental-visits/${appointment.id}`,{method:'PUT',headers:{Origin:'http://localhost:5173',Cookie:loginA.cookie,'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify(complete)}); const d=await r.json(); assert.equal(r.status,200,JSON.stringify(d)); return d; }
   const closed=await close(); await close();
   assert.equal(closed.status,'REFERRED'); assert.equal(closed.surgeryDate,null);
+  assert.equal((await request(`/clinic/plans/${closed.planId}`,'PATCH',{status:'ACCEPTED'},loginA.cookie)).status,409);
+  assert.equal((await request('/clinic/items','POST',{planId:closed.planId,tooth:'36',name:'Cannot append to closed care',pricePaise:10000},loginA.cookie)).status,409);
   assert.equal((await request(`/clinic/appointments/${appointment.id}`,'PATCH',{status:'SCHEDULED'},clinic.cookie)).status,409);
   assert.equal((await request(`/clinic/appointments/${appointment.id}`,'DELETE',undefined,clinic.cookie)).status,409);
   assert.equal((await request(`/clinic/dental-visits/${appointment.id}`,'PUT',body,loginA.cookie)).status,409);
