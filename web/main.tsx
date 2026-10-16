@@ -1,3 +1,4 @@
+import { AppointmentCalendar } from './appointment-calendar';
 import { AppointmentCreate } from './appointment-create';
 import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
 import { ClinicMasters } from './masters';
@@ -111,6 +112,7 @@ const adminNav = [
 ] as const;
 const statuses: Record<string, string> = {
   SCHEDULED: 'Scheduled',
+  ABSENT: 'Absent',
   CHECKED_IN: 'Checked in',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
@@ -530,7 +532,7 @@ function App() {
               ) : screen === 'patients' ? (
                 <Patients {...common} />
               ) : screen === 'appointments' ? (
-                route.tab === 'new' ? <AppointmentCreate {...common} /> : <Appointments {...common} />
+                route.tab === 'new' ? <AppointmentCreate {...common} /> : <AppointmentCalendar {...common} />
               ) : screen === 'treatments' ? (
                 <Treatments {...common} />
               ) : screen === 'billing' ? (
@@ -1116,104 +1118,6 @@ function Patients(props: any) {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
-function Appointments({ tick, modal, action }: any) {
-  const { data, error } = useData('/clinic/appointments', tick);
-  const { data: patients } = useData('/clinic/patients', tick);
-  const { data: doctors } = useData('/clinic/doctors', tick);
-  const [filter, setFilter] = useState('ALL');
-  return (
-    <>
-      <PageTitle title="Appointments" subtitle="Bring a little more flow to your clinic’s day.">
-        <button className="primary" onClick={() => appointmentModal(modal, action)}>
-          <Plus size={17} />
-          Schedule appointment
-        </button>
-      </PageTitle>
-      <div className="tabs">
-        {['ALL', 'SCHEDULED', 'CHECKED_IN', 'COMPLETED', 'CANCELLED'].map((s) => (
-          <button key={s} className={s === filter ? 'selected' : ''} onClick={() => setFilter(s)}>
-            {s === 'ALL' ? 'All appointments' : statuses[s]}
-          </button>
-        ))}
-      </div>
-      <section className="panel">
-        {!data ? (
-          <DataError error={error} />
-        ) : !data.length ? (
-          <Empty
-            title="Plan your next patient visit"
-            action={() => appointmentModal(modal, action)}
-          />
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Patient</th>
-                  <th>Date & time</th>
-                  <th>Doctor</th>
-                  <th>Reason</th>
-                  <th>Status</th>
-                  <th>Update</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data
-                  .filter((a: any) => filter === 'ALL' || a.status === filter)
-                  .sort(
-                    (a: any, b: any) =>
-                      new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime(),
-                  )
-                  .map((a: any) => (
-                    <tr key={a.id}>
-                      <td>
-                        <strong>
-                          {patients?.find((p: any) => p.id === a.patientId)?.name || 'Patient'}
-                        </strong>
-                      </td>
-                      <td>
-                        {day(a.startsAt)}
-                        <small>
-                          {new Date(a.startsAt).toLocaleTimeString('en-IN', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </small>
-                      </td>
-                      <td>{doctors?.find((d: any) => d.id === a.doctorId)?.name || 'Doctor'}</td>
-                      <td>{a.reason}</td>
-                      <td>
-                        <Badge value={a.status} />
-                      </td>
-                      <td>
-                        <select
-                          aria-label="Appointment status"
-                          value={a.status}
-                          onChange={(e) =>
-                            action(() =>
-                              api(`/clinic/appointments/${a.id}`, 'PATCH', {
-                                status: e.target.value,
-                              }),
-                            ).catch(() => {})
-                          }
-                        >
-                          {['SCHEDULED', 'CHECKED_IN', 'COMPLETED', 'CANCELLED'].map((s) => (
-                            <option key={s} value={s}>
-                              {statuses[s]}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
               </tbody>
             </table>
           </div>

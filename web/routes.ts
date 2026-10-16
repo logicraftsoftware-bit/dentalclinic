@@ -54,6 +54,8 @@ export type PageRoute = {
   area: 'public' | 'clinic' | 'admin';
   screen: string;
   patientId?: string;
+  appointmentDate?: string;
+  doctorId?: string;
   tab?: string;
   title: string;
   next?: string;
@@ -97,6 +99,11 @@ export function parsePageRoute(location: string): PageRoute {
       tab: tab || 'overview',
       title: `Patient record - ${patientTabs[tab || 'overview']}`,
     };
+  }
+  if (area === 'clinic' && screen === 'appointments' && /^\d{4}-\d{2}-\d{2}$/.test(detail || '') && !extra && (!tab || uuid.test(tab))) {
+    const parsed = new Date(detail + 'T12:00:00Z');
+    if (Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === detail)
+      return { area, screen, appointmentDate: detail, doctorId: tab, title: tab ? 'Daily patient list' : 'Appointment roster' };
   }
   if (area === 'clinic' && screen === 'appointments' && detail === 'new' && !tab)
     return { area, screen, tab: 'new', title: 'Create appointment' };

@@ -1441,3 +1441,32 @@ test('ordinary clinic reads do not acquire or modify the clinic write lock', asy
   const written = await db.transactionLock.findUniqueOrThrow({ where: { id: clinic.tenantId } });
   assert.ok(written.revision > after.revision);
 });
+
+test('calendar returns all scoped visits beyond 500 and respects clinic day boundaries', async () => {
+  const clinic = await register('Calendar clinic');
+  const patient = (await request('/clinic/patients', 'POST', { name: 'Calendar patient', phone: '9000034567' }, clinic.cookie)).data;
+  const doctor = (await request('/clinic/doctors', 'POST', { name: 'Calendar doctor', specialty: 'Dental' }, clinic.cookie)).data;
+  const base = { tenantId: clinic.tenantId, patientId: patient.id, doctorId: doctor.id };
+  await db.appointment.createMany({ data: [
+    ...Array.from({ length: 505 }, () => ({ ...base, startsAt: new Date('2026-10-08T04:30:00Z') })),
+    { ...base, startsAt: new Date('2026-10-07T18:30:00Z') },
+    { ...base, startsAt: new Date('2026-10-07T18:29:59Z') },
+    { ...base, startsAt: new Date('2026-10-08T18:30:00Z') },
+  ] });
+  const url = '/clinic/appointment-calendar?from=2026-10-08&to=2026-10-09';
+  const response = await request(url, 'GET', undefined, clinic.cookie);
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  assert.equal(response.data.appointments.length, 506);
+  assert.ok(response.data.appointments.every((row: any) => row.date === '2026-10-08' && row.patientName === patient.name && row.patientPhone === patient.phone));
+  assert.equal(response.data.doctors[0].name, doctor.name);
+  const foreign = await request(url, 'GET', undefined, b.cookie);
+  assert.ok(foreign.data.appointments.every((row: any) => row.tenantId !== clinic.tenantId));
+  const appointment = response.data.appointments[0];
+  const updated = await request(`/clinic/appointments/${appointment.id}`, 'PATCH', { status: 'ABSENT', paymentStatus: 'PARTIAL' }, clinic.cookie);
+  assert.equal(updated.status, 200);
+  assert.equal(updated.data.status, 'ABSENT');
+  assert.equal(updated.data.paymentStatus, 'PARTIAL');
+  assert.equal((await request(`/clinic/appointments/${appointment.id}`, 'PATCH', { paymentStatus: 'PAID' }, b.cookie)).status, 404);
+  for (const query of ['from=2026-02-30&to=2026-03-02', 'from=2026-01-01&to=2026-12-31', 'from=2026-10-09&to=2026-10-08'])
+    assert.equal((await request('/clinic/appointment-calendar?' + query, 'GET', undefined, clinic.cookie)).status, 400);
+});

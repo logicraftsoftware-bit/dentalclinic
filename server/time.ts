@@ -19,7 +19,7 @@ export function dateKey(date: Date, zone: string) {
   const p = parts(date, zone);
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
-function midnight(key: string, zone: string) {
+export function midnight(key: string, zone: string) {
   const [year, month, day] = key.split('-').map(Number);
   const wall = Date.UTC(year, month - 1, day);
   let instant = wall;

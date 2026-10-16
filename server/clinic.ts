@@ -20,7 +20,7 @@ import {
   type OwnedModel,
 } from './core.js';
 import { transactionalReply } from './reply.js';
-import { zonedDayRange, dateKey } from './time.js';
+import { zonedDayRange, dateKey, midnight } from './time.js';
 import { doctorAvailableAt, doctorBranches } from './doctor-branches.js';
 
 export const clinicApi = Router();
@@ -388,6 +388,29 @@ async function prepareMasterData(resource: string, data: any, store: any, old?: 
       );
   }
 }
+// A bounded calendar range returns every matching visit, without the generic 500-row limit.
+clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res: any, { store, tenant }: any) => {
+  const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+    const parsed = new Date(value + 'T12:00:00Z');
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'Invalid calendar date');
+  const from = date.parse(req.query.from), to = date.parse(req.query.to);
+  const days = (Date.parse(to) - Date.parse(from)) / 86400000;
+  assert(days > 0 && days <= 62, 400, 'Choose a calendar range of up to 62 days.');
+  const timezone = tenant.settings?.timezone || 'Asia/Kolkata';
+  const appointments = await store.list('appointment', { startsAt: { gte: midnight(from, timezone), lt: midnight(to, timezone) } }, { orderBy: { startsAt: 'asc' } });
+  const ids = (key: string) => [...new Set(appointments.map((a: any) => a[key]).filter(Boolean))];
+  const [patients, doctors, branches] = await Promise.all([
+    store.list('patient', { id: { in: ids('patientId') } }, { select: { id: true, name: true, phone: true } }),
+    store.list('doctor', { id: { in: ids('doctorId') } }, { select: { id: true, name: true, specialty: true } }),
+    store.list('branch', { id: { in: ids('branchId') } }, { select: { id: true, name: true } }),
+  ]);
+  const patientMap = new Map(patients.map((p: any) => [p.id, p]));
+  res.json({ timezone, doctors, branches, appointments: appointments.map((a: any) => ({
+    ...a, date: dateKey(a.startsAt, timezone), patientName: (patientMap.get(a.patientId) as any)?.name || 'Patient',
+    patientPhone: (patientMap.get(a.patientId) as any)?.phone || '',
+  })) });
+}));
 for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
   // Catalog is readable by the clinical/reception team; settings permission is required for changes.
   const readCap = ['catalog', 'charges', 'charge-groups', 'specialities'].includes(resource)
@@ -534,7 +557,8 @@ clinicApi.patch(
   run('appointments', async (req: any, res: any, { store }: any, actor: any) => {
     const data = z
       .object({
-        status: z.enum(['SCHEDULED', 'CHECKED_IN', 'COMPLETED', 'CANCELLED']).optional(),
+        status: z.enum(['SCHEDULED', 'CHECKED_IN', 'COMPLETED', 'CANCELLED', 'ABSENT']).optional(),
+        paymentStatus: z.enum(['PENDING', 'PAID', 'PARTIAL', 'NOT_REQUIRED']).optional(),
         startsAt: iso.optional(),
       })
       .strict()

@@ -251,6 +251,7 @@ model Appointment {
   clinicFeePaise Int @default(0)
   useClinicFee Boolean @default(false)
   notes String @default("")
+  paymentStatus String @default("PENDING")
   status String @default("SCHEDULED")
   createdAt DateTime @default(now())
   patient Patient @relation(fields: [patientId], references: [id])
