@@ -203,15 +203,31 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await dialog.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.locator('table .badge')).toHaveText('Part paid');
   await page.getByRole('button', { name: 'Book appointment' }).click();
-  dialog = page.getByRole('dialog');
+  await expect(page).toHaveURL(/\/clinic\/appointments\/new\?patientId=/);
+  await expect(page.getByRole('heading', { name: 'Create appointment', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const patientSearch = page.getByLabel('Search patient by name or phone number');
+  await expect(patientSearch).toHaveValue('Ananya Das');
+  await patientSearch.fill('9876543211');
+  await page.getByRole('button', { name: 'Ananya Das 9876543211' }).click();
+  await expect(patientSearch).toHaveValue('Ananya Das');
+  await expect(page.getByRole('button', { name: 'Dr. Aditi Sharma Endodontist' })).toHaveCount(0);
+  await page.getByLabel('Search doctor by name').fill('Aditi');
+  await page.getByRole('button', { name: 'Dr. Aditi Sharma Endodontist' }).click();
+  await expect(page.locator('.appointment-fees')).toContainText('Consultant fee');
+  await expect(page.locator('.appointment-fees')).toContainText('Visiting consultant fee');
+  const clinicFee = page.getByRole('checkbox', { name: /Use Clinic Fee/ });
+  await expect(clinicFee).toBeChecked();
+  await clinicFee.uncheck();
   const date = new Date();
   date.setDate(date.getDate() + 1);
-  date.setHours(10, 0, 0, 0);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-  await dialog.getByLabel('Date & time').fill(local);
-  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  await page.getByLabel('Date', { exact: false }).fill(local);
+  await page.getByLabel(/^Time/).fill('10:00');
+  await page.getByLabel('Notes (optional)').fill('Morning consultation');
+  await page.getByRole('button', { name: 'Create appointment', exact: true }).click();
+  await expect(page).toHaveURL(/\/clinic\/appointments$/);
+  await expect(page.getByRole('row').filter({ hasText: 'Ananya Das' })).toContainText('Dr. Aditi Sharma');
   await page.locator('.sidebar nav').getByRole('button', { name: 'Overview', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Welcome back, Aditi' })).toBeVisible();
   await page.screenshot({ path: '.tools/screenshots/clinic-desktop.png', fullPage: true });
