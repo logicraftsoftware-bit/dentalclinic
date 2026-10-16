@@ -228,14 +228,15 @@ function App() {
   };
   useEffect(() => {
     Promise.all([
-      api('/public/plans').then(setPublicPlans),
-      api('/public/settings').then(setPublicSettings),
+      api('/public/plans').then(setPublicPlans).catch(() => {}),
+      api('/public/settings').then(setPublicSettings).catch(() => {}),
       api('/auth/me')
         .then((u) => {
           setMe(u);
         })
-        .catch(() => {}),
-    ]).finally(() => setReady(true));
+        .catch(() => {})
+        .finally(() => setReady(true)),
+    ]);
   }, []);
   useEffect(() => {
     if (me?.tenantId)

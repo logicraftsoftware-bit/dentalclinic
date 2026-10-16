@@ -1427,3 +1427,17 @@ test('appointments snapshot doctor fees, optional clinic fee and notes', async (
   assert.equal(results.status, 200);
   assert.ok(results.data.some((p: any) => p.id === patient.id));
 });
+
+test('ordinary clinic reads do not acquire or modify the clinic write lock', async () => {
+  const clinic = await register('Concurrent reads clinic');
+  assert.equal((await request('/clinic/patients', 'POST', { name: 'Initial patient', phone: '9000023455' }, clinic.cookie)).status, 201);
+  const before = await db.transactionLock.findUniqueOrThrow({ where: { id: clinic.tenantId } });
+  const responses = await Promise.all(['/clinic/patients', '/clinic/doctors', '/clinic/appointments', '/clinic/workspace', '/clinic/overview'].map(path => request(path, 'GET', undefined, clinic.cookie)));
+  for (const response of responses) assert.equal(response.status, 200, JSON.stringify(response.data));
+  const after = await db.transactionLock.findUniqueOrThrow({ where: { id: clinic.tenantId } });
+  assert.equal(after.revision, before.revision);
+  const created = await request('/clinic/patients', 'POST', { name: 'Locked write', phone: '9000023456' }, clinic.cookie);
+  assert.equal(created.status, 201);
+  const written = await db.transactionLock.findUniqueOrThrow({ where: { id: clinic.tenantId } });
+  assert.ok(written.revision > after.revision);
+});

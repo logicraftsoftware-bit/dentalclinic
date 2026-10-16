@@ -33,7 +33,11 @@ const run =
           actor,
           capability,
           (ctx) => transactionalReply(req, ctx.store, (reply) => fn(req, reply, ctx, actor)),
-          { accessOnly, hostname: req.hostname, readOnly },
+          {
+            accessOnly, hostname: req.hostname,
+            // Export and downloads write audit records and must retain the write transaction.
+            readOnly: readOnly || (req.method === 'GET' && req.path !== '/export' && !req.path.endsWith('/download')),
+          },
         ),
       )
       .then((reply) => reply.flush(res))
@@ -250,13 +254,21 @@ clinicApi.get(
           ? store.list('followUp', { status: 'OPEN' }, { orderBy: { dueAt: 'asc' }, take: 5 })
           : Promise.resolve([]),
       ]);
-      const appts = await Promise.all(
-        appointments.map(async (a: any) => ({
-          ...a,
-          patientName: (await store.get('patient', a.patientId)).name,
-          doctorName: (await store.get('doctor', a.doctorId)).name,
-        })),
-      );
+      const patientIds = [...new Set(appointments.map((a: any) => a.patientId))];
+      const appointmentPatients = patientIds.length
+        ? await store.list('patient', { id: { in: patientIds } }, { select: { id: true, name: true } })
+        : [];
+      const patientNames = new Map(appointmentPatients.map((p: any) => [p.id, p.name]));
+      const missingDoctorIds = [...new Set(appointments.map((a: any) => a.doctorId))]
+        .filter(id => !doctors.some((d: any) => d.id === id));
+      const otherDoctors = missingDoctorIds.length
+        ? await store.list('doctor', { id: { in: missingDoctorIds } }, { select: { id: true, name: true } })
+        : [];
+      const doctorNames = new Map([...doctors, ...otherDoctors].map((d: any) => [d.id, d.name]));
+      const appts = appointments.map((a: any) => ({
+        ...a, patientName: patientNames.get(a.patientId) || 'Patient',
+        doctorName: doctorNames.get(a.doctorId) || 'Doctor',
+      }));
       res.json({
         tenant,
         subscription,
