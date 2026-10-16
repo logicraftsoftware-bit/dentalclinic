@@ -5,7 +5,7 @@ import { assert, id, money, iso, effectiveLimits, checkLimit } from './core.js';
 import { doctorBranches, doctorAvailableAt } from './doctor-branches.js';
 
 const note = z.string().trim().max(10000).default('');
-const tooth = z.string().regex(/^(?:[1-4][1-8]|[5-8][1-5])$/);
+const tooth = z.string().regex(/^(?:[1-4][1-8]|[5-8][1-5])$/, 'Select a tooth from the permanent or primary tooth list.');
 const dentalForm = z.object({
   complaint: note, findings: note, diagnosis: note, advice: note, medication: note,
   medicalHistory: note, allergies: note, consent: z.boolean().default(false),
@@ -13,7 +13,7 @@ const dentalForm = z.object({
   teeth: z.record(tooth, z.object({ condition: z.enum(['Healthy', 'Caries', 'Filled', 'Missing', 'Crown', 'Root canal', 'Implant', 'Planned']), notes: z.string().max(1000).default('') })).default({}),
   lines: z.array(z.object({ tooth, catalogItemId: id.optional(), name: z.string().trim().min(1).max(200), pricePaise: money, labChargePaise: money.default(0), labName: z.string().max(200).default(''), labNotes: note })).max(100).default([]),
   finalize: z.boolean().default(false),
-  referral: z.object({ doctorId: id, branchId: id.nullable().optional(), reason: z.string().trim().min(1).max(10000) }).optional(),
+  referral: z.object({ doctorId: id, branchId: id.nullable().optional(), reason: z.string().trim().min(1, 'Enter a referral reason for the receiving doctor.').max(10000) }).optional(),
 }).strict();
 
 export function registerDentalRoutes(router: Router, run: any, validateSlot: any) {

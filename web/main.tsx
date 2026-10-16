@@ -220,14 +220,14 @@ function App() {
     setToast(message);
     setTimeout(() => setToast(''), 5000);
   };
-  const action = async (fn: () => Promise<any>, message = 'Saved successfully') => {
+  const action = async (fn: () => Promise<any>, message = 'Saved successfully', options: { reportError?: boolean } = {}) => {
     try {
       const result = await fn();
       notify(message);
       refresh();
       return result;
     } catch (e: any) {
-      setError(e.message);
+      if (options.reportError !== false) setError(e.message);
       throw e;
     }
   };

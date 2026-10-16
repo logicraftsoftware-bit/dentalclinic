@@ -467,6 +467,18 @@ test('doctor login, tooth treatment, referral reception scheduling and inherited
   await page.getByRole('button',{name:'Save draft',exact:true}).click();await expect(page.locator('.dental-visit > header .badge')).toHaveText('DRAFT');
   await page.reload();await expect(page.getByLabel('Treatment 1 name',{exact:true})).toHaveValue('Dental restoration');
   await page.getByRole('switch',{name:'Refer internally to another doctor'}).check();await page.getByRole('combobox',{name:'Referral doctor',exact:true}).selectOption(beta.id);
+  await page.getByRole('button',{name:'Add treatment',exact:true}).click();
+  await page.getByLabel('Treatment 2 tooth',{exact:true}).selectOption('');
+  await page.getByLabel('Treatment 2 name',{exact:true}).fill('Second treatment');
+  await page.getByRole('button',{name:'Close visit & refer to reception',exact:true}).click();
+  await expect(page.getByRole('alert')).toHaveCount(1);
+  await expect(page.getByRole('alert')).toHaveText('Please correct the highlighted fields. Your entries have been kept.');
+  await expect(page.getByLabel('Treatment 2 tooth',{exact:true})).toBeFocused();
+  await expect(page.getByText('Treatment 2: select a tooth from the list.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Enter a referral reason for the receiving doctor.',{exact:true})).toBeVisible();
+  await expect(page.getByLabel('Treatment 1 name',{exact:true})).toHaveValue('Dental restoration');
+  await expect(page.locator('.dental-visit > header .badge')).toHaveText('DRAFT');
+  await page.locator('.dental-treatment-line').nth(1).getByRole('button',{name:'Remove treatment',exact:true}).click();
   await page.getByLabel('Referral reason').fill('Internal specialist review');
   await page.screenshot({path:'.tools/screenshots/dental-treatment-form.png',fullPage:true});
   await page.getByRole('button',{name:'Close visit & refer to reception',exact:true}).click();await expect(page.locator('.dental-visit > header .badge')).toHaveText('REFERRED');

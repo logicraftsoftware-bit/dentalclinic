@@ -3600,3 +3600,6 @@ td .text-button {
 .dental-referral-notice { padding: 18px; background: #eaf4ee; color: #28724f; border: 1px solid #c8e2d2; border-radius: 10px; margin: 20px 0; }
 .dental-visit input:disabled, .dental-visit textarea:disabled, .dental-visit select:disabled { color: #445d4e; opacity: 1; background: #f6f9f7; }
 @media(max-width:700px) { .dental-form-grid { grid-template-columns: 1fr; }.dental-section { padding: 16px; }.dental-save-actions { flex-wrap: wrap; }.dental-treatment-line { padding: 14px; } }
+
+.dental-field-error { display: block; color: #a33224; font-weight: 500; }
+.dental-visit [aria-invalid="true"] { border-color: #bd4939; }
