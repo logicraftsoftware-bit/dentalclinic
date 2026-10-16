@@ -407,11 +407,12 @@ clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res:
     store.list('doctor', { id: { in: ids('doctorId') } }, { select: { id: true, name: true, specialty: true } }),
     store.list('branch', { id: { in: ids('branchId') } }, { select: { id: true, name: true } }),
   ]);
-  const closedVisits = appointments.length ? await store.list('dentalEncounter', { appointmentId: { in: appointments.map((a: any) => a.id) }, status: { not: 'DRAFT' } }, { select: { appointmentId: true } }) : [];
+  const closedVisits = appointments.length ? await store.list('dentalEncounter', { appointmentId: { in: appointments.map((a: any) => a.id) }, status: { not: 'DRAFT' } }, { select: { appointmentId: true, status: true } }) : [];
   const closedIds = new Set(closedVisits.map((v: any) => v.appointmentId));
+  const referredIds = new Set(closedVisits.filter((v: any) => v.status === 'REFERRED').map((v: any) => v.appointmentId));
   const patientMap = new Map(patients.map((p: any) => [p.id, p]));
   res.json({ timezone, doctors, branches, appointments: appointments.map((a: any) => ({
-    ...a, clinicalRecordClosed: closedIds.has(a.id), date: dateKey(a.startsAt, timezone), patientName: (patientMap.get(a.patientId) as any)?.name || 'Patient',
+    ...a, clinicalRecordClosed: closedIds.has(a.id), referred: referredIds.has(a.id), date: dateKey(a.startsAt, timezone), patientName: (patientMap.get(a.patientId) as any)?.name || 'Patient',
     patientPhone: (patientMap.get(a.patientId) as any)?.phone || '',
   })) });
 }));

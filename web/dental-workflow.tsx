@@ -89,6 +89,7 @@ export function DentalVisit({ route, workspace, tick, action, modal, go }: any) 
       fields.finalize = finalize;
       if (finalize && refer) fields.referral = { doctorId: referDoctor, branchId: referBranch || null, reason: referReason };
       const saved = await action(() => api(`/clinic/dental-visits/${route.appointmentId}`, 'PUT', fields), finalize ? refer ? 'Visit closed and referral sent to reception' : 'Visit closed and billing sent to reception' : 'Treatment draft saved', { reportError: false });
+      if (finalize && refer && workspace?.role === 'DOCTOR') { go('/clinic/appointments'); return; }
       setData((old: any) => ({ ...old, encounter: saved }));
     } catch (e: any) { setError(e.message); } finally { setSaving(false); }
   }

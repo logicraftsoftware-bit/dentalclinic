@@ -481,7 +481,15 @@ test('doctor login, tooth treatment, referral reception scheduling and inherited
   await page.locator('.dental-treatment-line').nth(1).getByRole('button',{name:'Remove treatment',exact:true}).click();
   await page.getByLabel('Referral reason').fill('Internal specialist review');
   await page.screenshot({path:'.tools/screenshots/dental-treatment-form.png',fullPage:true});
-  await page.getByRole('button',{name:'Close visit & refer to reception',exact:true}).click();await expect(page.locator('.dental-visit > header .badge')).toHaveText('REFERRED');
+  await page.getByRole('button',{name:'Close visit & refer to reception',exact:true}).click();await expect(page).toHaveURL(/\/clinic\/appointments$/);
+  await page.getByRole('button',{name:date+', 1 appointment',exact:true}).click();
+  await expect(page.getByText('Referred / closed',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Open treatment',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'View treatment',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Follow-up',exact:true})).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText('Referred / closed',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Open treatment',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Save draft',exact:true})).toHaveCount(0);
   await signIn(recepEmail);await page.locator('.sidebar nav').getByRole('button',{name:'Internal referrals',exact:true}).click();
   await page.getByRole('button',{name:'Review & schedule',exact:true}).click();await expect(page.getByLabel('Referred doctor',{exact:true})).toHaveValue('Doctor Beta');

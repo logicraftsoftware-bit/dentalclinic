@@ -60,11 +60,12 @@ export function registerDentalRoutes(router: Router, run: any, validateSlot: any
     res.json({ id: row.id, email: data.email, active: row.active });
   }));
 
-  router.get('/dental-visits/:id', run('appointments', async (req: any, res: any, { store, tx, tenant }: any) => {
+  router.get('/dental-visits/:id', run('appointments', async (req: any, res: any, { store, tx, tenant, membership }: any) => {
     const appointment = await store.get('appointment', id.parse(req.params.id));
     const patient = await store.get('patient', appointment.patientId);
-    const [encounters, history, plans, invoices, referrals] = await Promise.all([
-      store.list('dentalEncounter', { appointmentId: appointment.id }),
+    const encounters = await store.list('dentalEncounter', { appointmentId: appointment.id });
+    assert(!(membership.role === 'DOCTOR' && membership.doctorId === appointment.doctorId && encounters.some((v: any) => v.status === 'REFERRED')), 403, 'This visit has been referred and is closed for the previous doctor. Reception will schedule the receiving doctor.');
+    const [history, plans, invoices, referrals] = await Promise.all([
       store.list('dentalEncounter', { patientId: patient.id, status: { not: 'DRAFT' } }, { orderBy: { createdAt: 'desc' } }),
       store.list('treatmentPlan', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } }),
       store.list('invoice', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } }),
