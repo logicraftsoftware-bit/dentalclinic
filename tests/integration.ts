@@ -1404,3 +1404,26 @@ test('branch admins delegate staff safely and branch/doctor panels isolate recor
     401,
   );
 });
+
+test('appointments snapshot doctor fees, optional clinic fee and notes', async () => {
+  const clinic = await register('Appointment fees clinic');
+  const patient = (await request('/clinic/patients', 'POST', { name: 'Fee patient', phone: '9000012345' }, clinic.cookie)).data;
+  const doctor = (await request('/clinic/doctors', 'POST', {
+    name: 'Appointment fee doctor', consultationPaise: 45000, visitingConsultationPaise: 90000,
+  }, clinic.cookie)).data;
+  for (const useClinicFee of [false, true]) {
+    const result = await request('/clinic/appointments', 'POST', {
+      patientId: patient.id, doctorId: doctor.id,
+      startsAt: new Date(Date.now() + (useClinicFee ? 12 : 11) * 86400000).toISOString(),
+      useClinicFee, notes: 'Patient requested a morning visit.',
+    }, clinic.cookie);
+    assert.equal(result.status, 201, JSON.stringify(result.data));
+    assert.equal(result.data.consultationPaise, 45000);
+    assert.equal(result.data.visitingConsultationPaise, 90000);
+    assert.equal(result.data.clinicFeePaise, useClinicFee ? 30000 : 0);
+    assert.equal(result.data.notes, 'Patient requested a morning visit.');
+  }
+  const results = await request(`/clinic/patients?q=${encodeURIComponent(patient.phone)}`, 'GET', undefined, clinic.cookie);
+  assert.equal(results.status, 200);
+  assert.ok(results.data.some((p: any) => p.id === patient.id));
+});

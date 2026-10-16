@@ -246,6 +246,11 @@ model Appointment {
   startsAt DateTime
   durationMinutes Int @default(30)
   reason String @default("Consultation")
+  consultationPaise Int @default(0)
+  visitingConsultationPaise Int @default(0)
+  clinicFeePaise Int @default(0)
+  useClinicFee Boolean @default(false)
+  notes String @default("")
   status String @default("SCHEDULED")
   createdAt DateTime @default(now())
   patient Patient @relation(fields: [patientId], references: [id])

@@ -57,3 +57,10 @@ test('login returns to a valid authorized area and rejects external redirects', 
     assert.equal(loginDestination(next, owner), '/clinic/dashboard');
   assert.equal(loginDestination('/admin/clinics', { platformAdmin: true }), '/admin/clinics');
 });
+
+test('appointment creation has a dedicated page', () => {
+  assert.deepEqual(parsePageRoute('/clinic/appointments/new'), {
+    area: 'clinic', screen: 'appointments', tab: 'new', title: 'Create appointment',
+  });
+  assert.equal(parsePageRoute('/clinic/appointments/new/extra').notFound, true);
+});

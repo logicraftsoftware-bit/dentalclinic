@@ -103,6 +103,8 @@ const schemas: Record<
       startsAt: iso,
       durationMinutes: z.number().int().min(5).max(480).default(30),
       reason: z.string().max(200).default('Consultation'),
+      useClinicFee: z.boolean().default(false),
+      notes: string,
     }),
     refs: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
   },
@@ -422,8 +424,11 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
           'specialities',
           'charge-groups',
         ].includes(resource)
-      )
-        where.name = { contains: z.string().max(100).parse(req.query.q), mode: 'insensitive' };
+      ) {
+        const contains = { contains: z.string().max(100).parse(req.query.q), mode: 'insensitive' };
+        if (resource === 'patients') where.OR = [{ name: contains }, { phone: contains }];
+        else where.name = contains;
+      }
       const rows = await store.list(config.model, where, {
         orderBy: { createdAt: 'desc' },
         take: 500,
@@ -456,7 +461,13 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
         if (data[field]) await store.get(model, data[field]);
       if (['notes', 'charts', 'prescriptions'].includes(resource)) data.authorId = actor.userId;
       await prepareMasterData(resource, data, store);
-      if (resource === 'appointments') await validateSlot(store, data);
+      if (resource === 'appointments') {
+        await validateSlot(store, data);
+        const doctor = await store.get('doctor', data.doctorId);
+        data.consultationPaise = doctor.consultationPaise ?? 30000;
+        data.visitingConsultationPaise = doctor.visitingConsultationPaise ?? 100000;
+        data.clinicFeePaise = data.useClinicFee ? 30000 : 0;
+      }
       const row = await store.create(c.model, data);
       await store.audit(actor.userId, `${resource}.created`, row.id);
       res.status(201).json(row);

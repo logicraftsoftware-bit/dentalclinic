@@ -98,6 +98,8 @@ export function parsePageRoute(location: string): PageRoute {
       title: `Patient record - ${patientTabs[tab || 'overview']}`,
     };
   }
+  if (area === 'clinic' && screen === 'appointments' && detail === 'new' && !tab)
+    return { area, screen, tab: 'new', title: 'Create appointment' };
   if (area === 'clinic' && screen === 'masters' && !tab && detail && masterPages[detail])
     return { area, screen, tab: detail, title: masterPages[detail] };
   const pages = area === 'clinic' ? clinicPages : area === 'admin' ? adminPages : {};

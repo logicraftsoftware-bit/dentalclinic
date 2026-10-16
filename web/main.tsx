@@ -1,3 +1,4 @@
+import { AppointmentCreate } from './appointment-create';
 import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
 import { ClinicMasters } from './masters';
 import React, { useState, useEffect } from 'react';
@@ -528,7 +529,7 @@ function App() {
               ) : screen === 'patients' ? (
                 <Patients {...common} />
               ) : screen === 'appointments' ? (
-                <Appointments {...common} />
+                route.tab === 'new' ? <AppointmentCreate {...common} /> : <Appointments {...common} />
               ) : screen === 'treatments' ? (
                 <Treatments {...common} />
               ) : screen === 'billing' ? (
@@ -998,41 +999,9 @@ async function options(resource: string, label = 'name') {
     .filter((r: any) => r.active !== false)
     .map((r: any) => ({ value: r.id, label: r[label] }));
 }
-async function appointmentModal(modal: any, action: any, patientId?: string) {
-  try {
-    const [patients, doctors, branches] = await Promise.all([
-      options('patients'),
-      options('doctors'),
-      options('branches'),
-    ]);
-    modal({
-      title: 'Schedule an appointment',
-      fields: [
-        {
-          key: 'patientId',
-          label: 'Patient',
-          type: 'select',
-          options: patients,
-          required: true,
-          value: patientId,
-        },
-        { key: 'doctorId', label: 'Doctor', type: 'select', options: doctors, required: true },
-        { key: 'branchId', label: 'Branch', type: 'select', options: branches },
-        { key: 'startsAt', label: 'Date & time', type: 'datetime-local', required: true },
-        {
-          key: 'durationMinutes',
-          label: 'Duration (minutes)',
-          type: 'number',
-          value: 30,
-          required: true,
-        },
-        { key: 'reason', label: 'Reason for visit', value: 'Consultation', required: true },
-      ],
-      submit: (data: any) => action(() => api('/clinic/appointments', 'POST', data)),
-    });
-  } catch (e: any) {
-    modal({ title: 'Unable to schedule', subtitle: e.message, fields: [], submit: async () => {} });
-  }
+function appointmentModal(_modal: any, _action: any, patientId?: string) {
+  window.history.pushState({}, '', '/clinic/appointments/new' + (patientId ? '?patientId=' + patientId : ''));
+  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 async function invoiceModal(modal: any, action: any, patientId?: string) {
   const patients = await options('patients');
