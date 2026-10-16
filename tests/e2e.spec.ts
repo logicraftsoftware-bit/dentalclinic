@@ -431,3 +431,54 @@ test('shared named URLs survive sign-in, refresh and browser history', async ({ 
   await page.goto('/unknown-page');
   await expect(page.getByRole('heading', { name: 'Page not found', exact: true })).toBeVisible();
 });
+
+test('doctor login, tooth treatment, referral reception scheduling and inherited history work through the UI', async ({ page }) => {
+  const headers={Origin:'http://localhost:5173'}, password='Dental-Workflow-Password-123';
+  const plans=await (await page.request.get('/api/public/plans')).json(), plan=plans.find((p:any)=>p.name==='Enterprise');
+  const email=`dental-owner-${randomUUID()}@example.test`;
+  expect((await page.request.post('/api/auth/register',{headers,data:{clinicName:'Dental workflow clinic',name:'Workflow owner',email,password,phone:'9876543210',planId:plan.id,acceptTerms:true}})).status()).toBe(201);
+  await page.request.post('/api/auth/login',{headers,data:{email,password}});
+  async function create(resource:string,data:any){const r=await page.request.post('/api/clinic/'+resource,{headers,data});expect(r.status()).toBe(201);return r.json();}
+  const branch=await create('branches',{name:'Dental clinic branch'});
+  const alpha=await create('doctors',{name:'Doctor Alpha',branchId:branch.id,consultationPaise:10000,visitingConsultationPaise:20000});
+  const beta=await create('doctors',{name:'Doctor Beta',branchId:branch.id});
+  const patient=await create('patients',{name:'Dental workflow patient',phone:'9000054321',branchId:branch.id,doctorId:alpha.id});
+  const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  await create('appointments',{patientId:patient.id,doctorId:alpha.id,branchId:branch.id,startsAt:new Date(date+'T10:00:00+05:30').toISOString()});
+  const recepEmail=`dental-recep-${randomUUID()}@example.test`, alphaEmail=`alpha-${randomUUID()}@example.test`, betaEmail=`beta-${randomUUID()}@example.test`;
+  await create('staff',{name:'Dental receptionist',email:recepEmail,password,role:'RECEPTIONIST',branchId:branch.id});
+  await page.goto('/clinic/doctors');
+  for(const [name,loginEmail] of [['Doctor Alpha',alphaEmail],['Doctor Beta',betaEmail]]){
+    await page.locator('.doctor-card').filter({has:page.getByRole('heading',{name,exact:true})}).getByRole('button',{name:'Manage login'}).click();
+    const dialog=page.getByRole('dialog'); await dialog.getByLabel('Login email').fill(loginEmail); await dialog.getByLabel('Password (at least 12 characters)').fill(password);
+    await dialog.getByRole('button',{name:'Save changes'}).click(); await expect(dialog).toHaveCount(0);
+  }
+  async function signIn(loginEmail:string){await page.request.post('/api/auth/logout',{headers});await page.goto('/login');await page.getByLabel('Email address').fill(loginEmail);await page.getByLabel(/^Password/).fill(password);await page.getByRole('button',{name:'Sign in to your workspace'}).click();}
+  await signIn(alphaEmail); await expect(page).toHaveURL(/\/clinic\/appointments$/);
+  await page.getByRole('button',{name:date+', 1 appointment',exact:true}).click(); await expect(page).toHaveURL(new RegExp(alpha.id));
+  await page.getByRole('button',{name:'Open treatment',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Dental workflow patient',exact:true})).toBeVisible();
+  await page.getByLabel('Chief complaint').fill('Pain in tooth 36');await page.getByLabel('Diagnosis',{exact:true}).fill('Deep caries');
+  await page.getByRole('button',{name:'Select tooth 36',exact:true}).click(); await page.getByRole('combobox',{name:'Condition for tooth 36',exact:true}).selectOption('Caries');
+  await page.getByRole('button',{name:'Add treatment',exact:true}).click();await expect(page.getByLabel('Treatment 1 tooth',{exact:true})).toHaveValue('36');
+  await page.getByLabel('Treatment 1 name',{exact:true}).fill('Dental restoration');await page.getByLabel('Treatment 1 fee',{exact:true}).fill('1000');await page.getByLabel('Treatment 1 lab fee',{exact:true}).fill('200');
+  await page.getByLabel('Treatment 1 lab name',{exact:true}).fill('Clinic laboratory');
+  await page.getByLabel('Patient consent recorded for treatment').check();await expect(page.getByLabel('Surgery date (optional)')).toHaveValue('');
+  await page.getByRole('button',{name:'Save draft',exact:true}).click();await expect(page.locator('.dental-visit > header .badge')).toHaveText('DRAFT');
+  await page.reload();await expect(page.getByLabel('Treatment 1 name',{exact:true})).toHaveValue('Dental restoration');
+  await page.getByRole('switch',{name:'Refer internally to another doctor'}).check();await page.getByRole('combobox',{name:'Referral doctor',exact:true}).selectOption(beta.id);
+  await page.getByLabel('Referral reason').fill('Internal specialist review');
+  await page.screenshot({path:'.tools/screenshots/dental-treatment-form.png',fullPage:true});
+  await page.getByRole('button',{name:'Close visit & refer to reception',exact:true}).click();await expect(page.locator('.dental-visit > header .badge')).toHaveText('REFERRED');
+  await expect(page.getByRole('button',{name:'Save draft',exact:true})).toHaveCount(0);
+  await signIn(recepEmail);await page.locator('.sidebar nav').getByRole('button',{name:'Internal referrals',exact:true}).click();
+  await page.getByRole('button',{name:'Review & schedule',exact:true}).click();await expect(page.getByLabel('Referred doctor',{exact:true})).toHaveValue('Doctor Beta');
+  await page.locator('.dental-history').first().locator('summary').click();await expect(page.locator('.dental-history').first()).toContainText('Dental restoration');
+  await page.getByRole('button',{name:'Record payment',exact:true}).first().click();const paymentDialog=page.getByRole('dialog');await paymentDialog.getByRole('button',{name:'Save changes'}).click();await expect(paymentDialog).toHaveCount(0);
+  await page.getByLabel('Appointment date',{exact:true}).fill(date);await page.getByLabel('Appointment time',{exact:true}).fill('14:30');
+  await page.getByRole('button',{name:'Schedule referred appointment',exact:true}).click();await expect(page).toHaveURL(new RegExp(beta.id));
+  await signIn(betaEmail);await page.getByRole('button',{name:date+', 1 appointment',exact:true}).click();await page.getByRole('button',{name:'Open treatment',exact:true}).click();
+  await expect(page.getByText('Internal referral visit. Previous treatments and clinical notes are preserved below.',{exact:true})).toBeVisible();
+  await page.locator('.dental-history').first().locator('summary').click();await expect(page.locator('.dental-history').first()).toContainText('Dental restoration');
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
+});

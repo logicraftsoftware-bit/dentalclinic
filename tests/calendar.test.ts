@@ -17,6 +17,9 @@ test('calendar day and doctor routes survive refresh and reject invalid dates', 
   const doctor = '00000000-0000-4000-8000-000000000001';
   assert.equal(parsePageRoute('/clinic/appointments/2026-10-08').appointmentDate, '2026-10-08');
   assert.equal(parsePageRoute('/clinic/appointments/2026-10-08/' + doctor).doctorId, doctor);
+  assert.equal(parsePageRoute('/clinic/appointments/visit/' + doctor).appointmentId, doctor);
+  assert.equal(parsePageRoute('/clinic/referrals').screen, 'referrals');
+  assert.equal(parsePageRoute('/clinic/appointments/visit/invalid').notFound, true);
   for (const path of ['2026-02-30', '2026-13-01', '2026-10-08/invalid', '2026-10-08/' + doctor + '/extra'])
     assert.equal(parsePageRoute('/clinic/appointments/' + path).notFound, true);
 });

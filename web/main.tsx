@@ -1,3 +1,4 @@
+import { DentalVisit, ReferralInbox } from './dental-workflow';
 import { AppointmentCalendar } from './appointment-calendar';
 import { AppointmentCreate } from './appointment-create';
 import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
@@ -69,6 +70,7 @@ const clinicNav = [
   ['dashboard', 'Overview', LayoutDashboard],
   ['patients', 'Patients', Users],
   ['appointments', 'Appointments', CalendarDays],
+  ['referrals', 'Internal referrals', ArrowRight],
   ['treatments', 'Treatments', HeartPulse],
   ['billing', 'Billing & payments', Wallet],
   ['doctors', 'Doctors', Stethoscope],
@@ -80,6 +82,7 @@ const screenCaps: Record<string, string> = {
   dashboard: 'dashboard',
   patients: 'patients',
   appointments: 'appointments',
+  referrals: 'appointments',
   treatments: 'clinical',
   billing: 'billing',
   doctors: 'doctors',
@@ -264,7 +267,7 @@ function App() {
   const signedIn = async () => {
     const u = await api('/auth/me');
     setMe(u);
-    go(loginDestination(route.next, u), true);
+    go(!route.next && u.memberships?.find((m: any) => m.tenantId === u.tenantId)?.role === 'DOCTOR' ? '/clinic/appointments' : loginDestination(route.next, u), true);
   };
   useEffect(() => {
     if (!ready || route.notFound) return;
@@ -532,7 +535,9 @@ function App() {
               ) : screen === 'patients' ? (
                 <Patients {...common} />
               ) : screen === 'appointments' ? (
-                route.tab === 'new' ? <AppointmentCreate {...common} /> : <AppointmentCalendar {...common} />
+                route.tab === 'new' ? <AppointmentCreate {...common} /> : route.tab === 'visit' ? <DentalVisit {...common} /> : <AppointmentCalendar {...common} />
+              ) : screen === 'referrals' ? (
+                <ReferralInbox {...common} />
               ) : screen === 'treatments' ? (
                 <Treatments {...common} />
               ) : screen === 'billing' ? (
@@ -1288,7 +1293,8 @@ function printInvoice(i: any, w: any, p: any, payments: any[] = []) {
   popup.document.close();
   popup.print();
 }
-function Doctors({ tick, modal, action }: any) {
+function Doctors({ tick, modal, action, notify, workspace }: any) {
+  const { data: doctorLogins } = useData('/clinic/staff', tick);
   const { data: branches } = useData('/clinic/branches', tick);
   const branchField = (d?: any): Field => ({
     key: 'branchIds',
@@ -1376,6 +1382,7 @@ function Doctors({ tick, modal, action }: any) {
               </p>
               <small>{d.registrationNumber || 'Registration not recorded'}</small>
               {d.qualification && <p>{d.qualification}</p>}
+              <p>{doctorLogins?.find((m: any) => m.doctorId === d.id && m.active) ? 'Login: ' + doctorLogins.find((m: any) => m.doctorId === d.id && m.active).user.email : 'Login not configured'}</p>
               <div className="doctor-card-details">
                 <span>
                   Consultant fee<strong>{money(d.consultationPaise)}</strong>
@@ -1387,6 +1394,16 @@ function Doctors({ tick, modal, action }: any) {
               </div>
               <p>{(d.branchIds?.length ? d.branchIds : d.branchId ? [d.branchId] : []).map((id: string) => branches?.find((b: any) => b.id === id)?.name).filter(Boolean).join(' · ') || 'No branch assigned'}</p>
               <div className="doctor-actions">
+                <button className="secondary small" onClick={async () => {
+                  try {
+                    const login = await api(`/clinic/doctors/${d.id}/login`);
+                    modal({ title: login ? 'Update doctor login' : 'Create doctor login', subtitle: 'Each doctor signs in with their own email and password.', fields: [
+                      { key: 'email', label: 'Login email', type: 'email', required: true, value: login?.user.email || d.email },
+                      { key: 'password', label: 'Password (at least 12 characters)', type: 'password', required: true },
+                      ...(workspace?.role !== 'BRANCH_ADMIN' ? [{ key: 'allDoctorBranches', label: 'Allow appointments across all assigned branches', type: 'checkbox', value: login?.allDoctorBranches ?? true }] : []),
+                    ], submit: (fields: any) => action(() => api(`/clinic/doctors/${d.id}/login`, 'POST', fields), 'Doctor login saved') });
+                  } catch (e: any) { notify(e.message); }
+                }}>Manage login</button>
                 <button
                   className="secondary small"
                   onClick={() =>

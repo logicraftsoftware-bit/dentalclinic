@@ -1470,3 +1470,77 @@ test('calendar returns all scoped visits beyond 500 and respects clinic day boun
   for (const query of ['from=2026-02-30&to=2026-03-02', 'from=2026-01-01&to=2026-12-31', 'from=2026-10-09&to=2026-10-08'])
     assert.equal((await request('/clinic/appointment-calendar?' + query, 'GET', undefined, clinic.cookie)).status, 400);
 });
+
+test('doctor treatment closes into reception billing and a cross-branch internal referral preserves history', async () => {
+  const testDatabase = new URL(process.env.DATABASE_URL || 'mongodb://invalid/');
+  if (testDatabase.hostname === '127.0.0.1' && testDatabase.pathname === '/dentaflow_test') await db.rateBucket.deleteMany();
+  const clinic = await register('Dental referral clinic');
+  await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { overrides: { staff: null, branches: null, doctors: null } } });
+  const create = async (resource: string, body: any) => { const r=await request(`/clinic/${resource}`,'POST',body,clinic.cookie); assert.equal(r.status,201,JSON.stringify(r.data)); return r.data; };
+  const north=await create('branches',{name:'Dental north'}), south=await create('branches',{name:'Dental south'});
+  const first=await create('doctors',{name:'Treating dentist',branchId:north.id,branchIds:[north.id,south.id],consultationPaise:35000,visitingConsultationPaise:50000});
+  const second=await create('doctors',{name:'Referred specialist',branchId:south.id,consultationPaise:20000,visitingConsultationPaise:25000});
+  const emailA=`dentist-a-${randomUUID()}@example.test`, emailB=`dentist-b-${randomUUID()}@example.test`;
+  for (const [doctor,email] of [[first,emailA],[second,emailB]]) {
+    const r=await request(`/clinic/doctors/${doctor.id}/login`,'POST',{email,password},clinic.cookie);
+    assert.equal(r.status,200,JSON.stringify(r.data));
+    assert.equal(JSON.stringify(r.data).includes('password'),false);
+  }
+  const loginA=await request('/auth/login','POST',{email:emailA,password}), loginB=await request('/auth/login','POST',{email:emailB,password});
+  const receptionEmail=`dental-reception-${randomUUID()}@example.test`;
+  await create('staff',{name:'Receiving receptionist',email:receptionEmail,password,role:'RECEPTIONIST',branchId:south.id});
+  const reception=await request('/auth/login','POST',{email:receptionEmail,password});
+  const patient=await create('patients',{name:'Referred dental patient',phone:'9000067890',branchId:north.id,doctorId:first.id,allergies:'Latex'});
+  const appointment=await create('appointments',{patientId:patient.id,doctorId:first.id,branchId:north.id,startsAt:new Date(Date.now()+86400000).toISOString(),useClinicFee:true});
+  const otherPatient=await create('patients',{name:'Same doctor other branch',phone:'9000067891',branchId:south.id,doctorId:first.id});
+  await create('appointments',{patientId:otherPatient.id,doctorId:first.id,branchId:south.id,startsAt:new Date(Date.now()+3*86400000).toISOString()});
+  const ownAppointments=await request('/clinic/appointments','GET',undefined,loginA.cookie);
+  assert.equal(ownAppointments.status,200); assert.equal(ownAppointments.data.length,2); assert.ok(ownAppointments.data.every((a:any)=>a.doctorId===first.id));
+  assert.equal((await request('/clinic/appointments','GET',undefined,loginB.cookie)).data.length,0);
+  const body={complaint:'Pain in lower molar',findings:'Deep caries',diagnosis:'Pulpitis',advice:'Review with specialist',medication:'Prescription recorded by treating dentist',medicalHistory:'No prior surgery',allergies:'Latex',consent:true,surgeryDate:null,teeth:{'36':{condition:'Caries',notes:'Occlusal lesion'}},lines:[{tooth:'36',name:'Pulp therapy',pricePaise:80000,labChargePaise:20000,labName:'Dental lab',labNotes:'Preserve shade record'}]};
+  assert.equal((await request(`/clinic/dental-visits/${appointment.id}`,'PUT',body,reception.cookie)).status,403);
+  assert.equal((await request(`/clinic/dental-visits/${appointment.id}`,'GET',undefined,loginB.cookie)).status,404);
+  assert.equal((await request(`/clinic/dental-visits/${appointment.id}`,'GET',undefined,b.cookie)).status,404);
+  const draft=await request(`/clinic/dental-visits/${appointment.id}`,'PUT',body,loginA.cookie);
+  assert.equal(draft.status,200,JSON.stringify(draft.data));
+  assert.equal(draft.data.status,'DRAFT');
+  assert.equal(await db.invoice.count({where:{tenantId:clinic.tenantId}}),0);
+  const invalid=await request(`/clinic/dental-visits/${appointment.id}`,'PUT',{...body,finalize:true,referral:{doctorId:doctorA.id,reason:'Must not cross clinics'}},loginA.cookie);
+  assert.equal(invalid.status,404);
+  assert.equal(await db.invoice.count({where:{tenantId:clinic.tenantId}}),0);
+  const complete={...body,finalize:true,referral:{doctorId:second.id,branchId:south.id,reason:'Specialist review for tooth 36'}};
+  const key=randomUUID();
+  async function close() { const r=await fetch(root+`/clinic/dental-visits/${appointment.id}`,{method:'PUT',headers:{Origin:'http://localhost:5173',Cookie:loginA.cookie,'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify(complete)}); const d=await r.json(); assert.equal(r.status,200,JSON.stringify(d)); return d; }
+  const closed=await close(); await close();
+  assert.equal(closed.status,'REFERRED'); assert.equal(closed.surgeryDate,null);
+  assert.equal((await request(`/clinic/appointments/${appointment.id}`,'PATCH',{status:'SCHEDULED'},clinic.cookie)).status,409);
+  assert.equal((await request(`/clinic/appointments/${appointment.id}`,'DELETE',undefined,clinic.cookie)).status,409);
+  assert.equal((await request(`/clinic/dental-visits/${appointment.id}`,'PUT',body,loginA.cookie)).status,409);
+  const invoices=await db.invoice.findMany({where:{tenantId:clinic.tenantId,appointmentId:appointment.id}});
+  assert.equal(invoices.length,5); assert.equal(invoices.reduce((s,i)=>s+i.totalPaise,0),215000);
+  const referrals=await request('/clinic/internal-referrals','GET',undefined,reception.cookie);
+  assert.equal(referrals.status,200,JSON.stringify(referrals.data)); assert.equal(referrals.data.rows.length,1);
+  const referral=referrals.data.rows[0];
+  const detail=await request(`/clinic/internal-referrals/${referral.id}`,'GET',undefined,reception.cookie);
+  assert.equal(detail.status,200,JSON.stringify(detail.data)); assert.equal(detail.data.doctor.id,second.id); assert.equal(detail.data.encounter.lines[0].tooth,'36');
+  assert.equal((await request(`/clinic/patients/${patient.id}`,'GET',undefined,loginB.cookie)).status,404);
+  assert.equal((await request(`/clinic/internal-referrals/${referral.id}/schedule`,'POST',{startsAt:new Date(Date.now()+2*86400000).toISOString()},loginA.cookie)).status,403);
+  const scheduled=await request(`/clinic/internal-referrals/${referral.id}/schedule`,'POST',{startsAt:new Date(Date.now()+2*86400000).toISOString()},reception.cookie);
+  assert.equal(scheduled.status,201,JSON.stringify(scheduled.data)); assert.equal(scheduled.data.doctorId,second.id); assert.equal(scheduled.data.referralId,referral.id);
+  assert.equal((await request(`/clinic/internal-referrals/${referral.id}/schedule`,'POST',{startsAt:new Date(Date.now()+3*86400000).toISOString()},reception.cookie)).status,409);
+  const next=await request(`/clinic/dental-visits/${scheduled.data.id}`,'GET',undefined,loginB.cookie);
+  assert.equal(next.status,200,JSON.stringify(next.data)); assert.equal(next.data.history[0].lines[0].labNotes,'Preserve shade record');
+  const nextClose=await request(`/clinic/dental-visits/${scheduled.data.id}`,'PUT',{complaint:'Referred review',diagnosis:'Reviewed tooth 36',finalize:true,surgeryDate:'2026-12-01T12:00:00.000Z'},loginB.cookie);
+  assert.equal(nextClose.status,200,JSON.stringify(nextClose.data)); assert.equal(nextClose.data.status,'CLOSED');
+  assert.equal((await request(`/clinic/appointments/${appointment.id}`,'PATCH',{paymentStatus:'PAID'},clinic.cookie)).status,409);
+  for (const invoice of invoices) {
+    const paid=await request('/clinic/payments','POST',{invoiceId:invoice.id,amountPaise:invoice.totalPaise,method:'CASH',idempotencyKey:randomUUID()},reception.cookie);
+    assert.equal(paid.status,201,JSON.stringify(paid.data));
+  }
+  assert.equal((await db.appointment.findUniqueOrThrow({where:{id:appointment.id}})).paymentStatus,'PAID');
+  const commissions=await db.commission.findMany({where:{tenantId:clinic.tenantId}});
+  assert.equal(commissions.length,1); assert.equal(commissions[0].amountPaise,32000);
+  assert.equal((await request(`/clinic/doctors/${first.id}/login`,'POST',{email:emailA,password:'New-Doctor-Password-123'},clinic.cookie)).status,200);
+  assert.equal((await request('/clinic/workspace','GET',undefined,loginA.cookie)).status,401);
+  assert.equal((await request('/auth/login','POST',{email:emailA,password},undefined)).status,401);
+});

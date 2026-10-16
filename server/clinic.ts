@@ -1,3 +1,4 @@
+import { registerDentalRoutes } from './dental.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -388,6 +389,7 @@ async function prepareMasterData(resource: string, data: any, store: any, old?: 
       );
   }
 }
+registerDentalRoutes(clinicApi, run, validateSlot);
 // A bounded calendar range returns every matching visit, without the generic 500-row limit.
 clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res: any, { store, tenant }: any) => {
   const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -405,9 +407,11 @@ clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res:
     store.list('doctor', { id: { in: ids('doctorId') } }, { select: { id: true, name: true, specialty: true } }),
     store.list('branch', { id: { in: ids('branchId') } }, { select: { id: true, name: true } }),
   ]);
+  const closedVisits = appointments.length ? await store.list('dentalEncounter', { appointmentId: { in: appointments.map((a: any) => a.id) }, status: { not: 'DRAFT' } }, { select: { appointmentId: true } }) : [];
+  const closedIds = new Set(closedVisits.map((v: any) => v.appointmentId));
   const patientMap = new Map(patients.map((p: any) => [p.id, p]));
   res.json({ timezone, doctors, branches, appointments: appointments.map((a: any) => ({
-    ...a, date: dateKey(a.startsAt, timezone), patientName: (patientMap.get(a.patientId) as any)?.name || 'Patient',
+    ...a, clinicalRecordClosed: closedIds.has(a.id), date: dateKey(a.startsAt, timezone), patientName: (patientMap.get(a.patientId) as any)?.name || 'Patient',
     patientPhone: (patientMap.get(a.patientId) as any)?.phone || '',
   })) });
 }));
@@ -564,6 +568,9 @@ clinicApi.patch(
       .strict()
       .parse(req.body);
     const old = await store.get('appointment', id.parse(req.params.id));
+    const closedVisit = (await store.list('dentalEncounter', { appointmentId: old.id, status: { not: 'DRAFT' } })).length > 0;
+    if (data.paymentStatus) assert(!closedVisit, 409, 'Record payments against the visit invoices in reception billing.');
+    if (closedVisit) assert(!data.startsAt && (!data.status || data.status === 'COMPLETED'), 409, 'This treatment visit is closed. Schedule a new appointment to continue care.');
     if (data.startsAt) await validateSlot(store, { ...old, ...data }, old.id);
     const row = await store.update('appointment', old.id, data);
     await store.audit(actor.userId, 'appointment.updated', old.id);
@@ -623,7 +630,9 @@ clinicApi.delete(
 clinicApi.delete(
   '/appointments/:id',
   run('appointments', async (req: any, res: any, { store }: any, actor: any) => {
-    const row = await store.update('appointment', id.parse(req.params.id), { status: 'CANCELLED' });
+    const appointmentId = id.parse(req.params.id);
+    assert(!(await store.list('dentalEncounter', { appointmentId, status: { not: 'DRAFT' } })).length, 409, 'A closed treatment visit cannot be cancelled.');
+    const row = await store.update('appointment', appointmentId, { status: 'CANCELLED' });
     await store.audit(actor.userId, 'appointment.cancelled', row.id);
     res.json(row);
   }),
@@ -705,7 +714,7 @@ clinicApi.post(
 );
 clinicApi.post(
   '/payments',
-  run('billing', async (req: any, res: any, { store }: any, actor: any) => {
+  run('billing', async (req: any, res: any, { store, tx, tenant }: any, actor: any) => {
     const data = z
       .object({
         invoiceId: id,
@@ -743,14 +752,21 @@ clinicApi.post(
     });
     if (invoice.sessionId) {
       const s = await store.get('treatmentSession', invoice.sessionId);
-      const doctor = await store.get('doctor', s.doctorId);
+      const doctor = await tx.doctor.findFirst({ where: { id: s.doctorId, tenantId: tenant.id } });
+      assert(doctor, 404, 'Treating doctor not found.');
       if (doctor.commissionPercent)
-        await store.create('commission', {
+        await tx.commission.create({ data: { tenantId: tenant.id,
           doctorId: doctor.id,
           paymentId: row.id,
           percent: doctor.commissionPercent,
           amountPaise: Math.round((data.amountPaise * doctor.commissionPercent) / 100),
-        });
+        } });
+    }
+    if (invoice.appointmentId) {
+      const linked = await store.list('invoice', { appointmentId: invoice.appointmentId });
+      const total = linked.reduce((n: number, i: any) => n + i.totalPaise, 0);
+      const received = linked.reduce((n: number, i: any) => n + i.paidPaise, 0);
+      await tx.appointment.update({ where: { tenantId_id: { tenantId: tenant.id, id: invoice.appointmentId } }, data: { paymentStatus: received >= total ? 'PAID' : received > 0 ? 'PARTIAL' : 'PENDING' } });
     }
     await store.audit(actor.userId, 'payment.received', row.id);
     res.status(201).json(row);
@@ -1050,6 +1066,8 @@ clinicApi.get(
     for (const model of [
       'patient',
       'appointment',
+      'dentalEncounter',
+      'internalReferral',
       'clinicalNote',
       'chartVersion',
       'treatmentPlan',
@@ -1070,6 +1088,8 @@ clinicApi.get(
       records.patient = records.patient.filter((r) => r.id === patientId);
       for (const key of [
         'appointment',
+        'dentalEncounter',
+        'internalReferral',
         'clinicalNote',
         'chartVersion',
         'treatmentPlan',

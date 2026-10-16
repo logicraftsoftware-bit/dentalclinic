@@ -60,6 +60,7 @@ model Membership {
   userId String
   tenantId String
   branchId String?
+  allDoctorBranches Boolean @default(false)
   doctorId String?
   role String @default("OWNER")
   active Boolean @default(true)
@@ -243,6 +244,7 @@ model Appointment {
   patientId String
   doctorId String
   branchId String?
+  referralId String?
   startsAt DateTime
   durationMinutes Int @default(30)
   reason String @default("Consultation")
@@ -347,6 +349,7 @@ model Invoice {
   tenantId String
   patientId String
   sessionId String?
+  appointmentId String?
   sourceKey String @default(uuid())
   description String
   totalPaise Int
@@ -513,4 +516,50 @@ model ChargeGroup {
   createdAt DateTime @default(now())
   @@unique([tenantId, id])
   @@unique([tenantId, nameKey])
+}
+
+model DentalEncounter {
+  id String @id @default(uuid()) @map("_id")
+  tenantId String
+  patientId String
+  appointmentId String
+  doctorId String
+  branchId String?
+  complaint String @default("")
+  findings String @default("")
+  diagnosis String @default("")
+  advice String @default("")
+  medication String @default("")
+  medicalHistory String @default("")
+  allergies String @default("")
+  consent Boolean @default(false)
+  surgeryDate DateTime?
+  nextVisit DateTime?
+  teeth Json @default("{}")
+  lines Json @default("[]")
+  status String @default("DRAFT")
+  planId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, id])
+  @@unique([tenantId, appointmentId])
+  @@index([tenantId, patientId])
+}
+model InternalReferral {
+  id String @id @default(uuid()) @map("_id")
+  tenantId String
+  patientId String
+  encounterId String
+  sourceAppointmentId String
+  fromDoctorId String
+  toDoctorId String
+  sourceBranchId String?
+  targetBranchId String?
+  reason String
+  status String @default("PENDING")
+  scheduledAppointmentId String?
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@unique([tenantId, encounterId])
+  @@index([tenantId, targetBranchId, status])
 }

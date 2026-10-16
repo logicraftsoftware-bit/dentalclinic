@@ -4,6 +4,7 @@ export const clinicPages: Record<string, string> = {
   dashboard: 'Overview',
   patients: 'Patients',
   appointments: 'Appointments',
+  referrals: 'Internal referrals',
   treatments: 'Treatments',
   billing: 'Billing & payments',
   doctors: 'Doctors',
@@ -55,6 +56,7 @@ export type PageRoute = {
   screen: string;
   patientId?: string;
   appointmentDate?: string;
+  appointmentId?: string;
   doctorId?: string;
   tab?: string;
   title: string;
@@ -100,6 +102,10 @@ export function parsePageRoute(location: string): PageRoute {
       title: `Patient record - ${patientTabs[tab || 'overview']}`,
     };
   }
+  if (area === 'clinic' && screen === 'appointments' && detail === 'visit' && tab && uuid.test(tab) && !extra)
+    return { area, screen, tab: 'visit', appointmentId: tab, title: 'Dental treatment' };
+  if (area === 'clinic' && screen === 'referrals' && !detail)
+    return { area, screen, title: 'Internal referrals' };
   if (area === 'clinic' && screen === 'appointments' && /^\d{4}-\d{2}-\d{2}$/.test(detail || '') && !extra && (!tab || uuid.test(tab))) {
     const parsed = new Date(detail + 'T12:00:00Z');
     if (Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === detail)
