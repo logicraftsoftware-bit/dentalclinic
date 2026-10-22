@@ -1,4 +1,4 @@
-import test, { before, after } from 'node:test';
+import test, { before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, createHmac } from 'node:crypto';
 process.env.NODE_ENV = 'test';
@@ -11,6 +11,15 @@ await new Promise<void>((r) => server.once('listening', r));
 const address = server.address() as any;
 const root = `http://127.0.0.1:${address.port}/api`;
 const password = 'Testing-Strong-Password-123';
+// CI can run the entire suite inside one login-rate window. Each independent
+// test gets fresh counters; requests within a rate-limit test still share them.
+// Never reset counters in a configured development or production database.
+beforeEach(async () => {
+  const database = new URL(process.env.DATABASE_URL || 'mongodb://invalid/');
+  if (database.hostname === '127.0.0.1' && database.pathname === '/dentaflow_test') {
+    await db.rateBucket.deleteMany();
+  }
+});
 let a: any,
   b: any,
   plan: any,
@@ -1577,8 +1586,6 @@ test('calendar returns all scoped visits beyond 500 and respects clinic day boun
 });
 
 test('doctor treatment closes into reception billing and a cross-branch internal referral preserves history', async () => {
-  const testDatabase = new URL(process.env.DATABASE_URL || 'mongodb://invalid/');
-  if (testDatabase.hostname === '127.0.0.1' && testDatabase.pathname === '/dentaflow_test') await db.rateBucket.deleteMany();
   const clinic = await register('Dental referral clinic');
   await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { overrides: { staff: null, branches: null, doctors: null } } });
   const create = async (resource: string, body: any) => { const r=await request(`/clinic/${resource}`,'POST',body,clinic.cookie); assert.equal(r.status,201,JSON.stringify(r.data)); return r.data; };
