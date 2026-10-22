@@ -1521,7 +1521,9 @@ test('doctor treatment closes into reception billing and a cross-branch internal
   assert.equal((await request(`/clinic/appointments/${appointment.id}`,'DELETE',undefined,clinic.cookie)).status,409);
   assert.equal((await request(`/clinic/dental-visits/${appointment.id}`,'PUT',body,loginA.cookie)).status,409);
   const invoices=await db.invoice.findMany({where:{tenantId:clinic.tenantId,appointmentId:appointment.id}});
-  assert.equal(invoices.length,5); assert.equal(invoices.reduce((s,i)=>s+i.totalPaise,0),215000);
+  assert.equal(invoices.length,3); assert.equal(invoices.reduce((s,i)=>s+i.totalPaise,0),130000);
+  const feeInvoices = invoices.filter(i => ['Consultant fee', 'Visiting consultant fee', 'Clinic fee'].includes(i.description));
+  assert.equal(feeInvoices.length,1); assert.equal(feeInvoices[0].description,'Clinic fee');
   const referrals=await request('/clinic/internal-referrals','GET',undefined,reception.cookie);
   assert.equal(referrals.status,200,JSON.stringify(referrals.data)); assert.equal(referrals.data.rows.length,1);
   const referral=referrals.data.rows[0];
