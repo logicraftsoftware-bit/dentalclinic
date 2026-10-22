@@ -20,7 +20,7 @@ export function AppointmentCreate({ go, action, workspace }: any) {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   });
   const [time, setTime] = useState('');
-  const [clinicFee, setClinicFee] = useState(true);
+  const [feeType, setFeeType] = useState('consultant');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
@@ -60,7 +60,7 @@ export function AppointmentCreate({ go, action, workspace }: any) {
       await action(() => api('/clinic/appointments', 'POST', {
         patientId: selected.id, doctorId, ...(branchId ? { branchId } : {}),
         startsAt: new Date(`${date}T${time}`).toISOString(), durationMinutes: 30,
-        useClinicFee: clinicFee, notes: notes.trim(),
+        feeType, notes: notes.trim(),
       }), 'Appointment created');
       go('/clinic/appointments');
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
@@ -85,9 +85,20 @@ export function AppointmentCreate({ go, action, workspace }: any) {
         <legend>Doctor & fees</legend>
         <label>Search doctor by name *<input value={doctorQuery} onChange={e => { setDoctorQuery(e.target.value); setDoctorId(''); }} placeholder="Enter doctor name" autoComplete="off" /></label>
         {!doctor && doctorQuery.trim() && <div className="appointment-results" aria-label="Doctor search results">{matches.map(d => <button type="button" key={d.id} onClick={() => { setDoctorId(d.id); setDoctorQuery(d.name); setBranchId(d.branchId || workspace?.branchId || ''); }}>{d.name}<span>{d.specialty}</span></button>)}{ready && !matches.length && <p>No doctors found.</p>}</div>}
-        {doctor && <div className="appointment-fees"><div>Consultant fee<strong>{money(doctor.consultationPaise ?? 30000)}</strong></div><div>Visiting consultant fee<strong>{money(doctor.visitingConsultationPaise ?? 100000)}</strong></div></div>}
-        <label className="appointment-clinic-fee"><input type="checkbox" checked={clinicFee} onChange={e => setClinicFee(e.target.checked)} /> Use Clinic Fee - {money(30000)}</label>
-        {doctor && <p className="appointment-selection">Total fees: <strong>{money((doctor.consultationPaise ?? 30000) + (doctor.visitingConsultationPaise ?? 100000) + (clinicFee ? 30000 : 0))}</strong></p>}
+        {doctor && <>
+          <p>Choose one charge</p>
+          <div className="appointment-fees" role="radiogroup" aria-label="Appointment charge">
+            {[
+              { value: 'consultant', label: 'Consultant fee', amount: doctor.consultationPaise ?? 30000 },
+              { value: 'visiting', label: 'Visiting consultant fee', amount: doctor.visitingConsultationPaise ?? 100000 },
+              { value: 'clinic', label: 'Clinic fee', amount: 30000 },
+            ].map(fee => <label className="appointment-fee-option" key={fee.value}>
+              <input type="radio" name="appointmentFee" value={fee.value} checked={feeType === fee.value} onChange={() => setFeeType(fee.value)} />
+              <span>{fee.label}<strong>{money(fee.amount)}</strong></span>
+            </label>)}
+          </div>
+          <p className="appointment-selection">Total fees: <strong>{money(feeType === 'clinic' ? 30000 : feeType === 'visiting' ? (doctor.visitingConsultationPaise ?? 100000) : (doctor.consultationPaise ?? 30000))}</strong></p>
+        </>}
         <label>Branch<select value={branchId} onChange={e => setBranchId(e.target.value)}><option value="">Unassigned</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
       </fieldset>
       <fieldset disabled={busy || !ready}>

@@ -216,9 +216,13 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByRole('button', { name: 'Dr. Aditi Sharma Endodontist' }).click();
   await expect(page.locator('.appointment-fees')).toContainText('Consultant fee');
   await expect(page.locator('.appointment-fees')).toContainText('Visiting consultant fee');
-  const clinicFee = page.getByRole('checkbox', { name: /Use Clinic Fee/ });
+  const clinicFee = page.getByRole('radio', { name: /^Clinic fee/ });
+  await clinicFee.check();
   await expect(clinicFee).toBeChecked();
-  await clinicFee.uncheck();
+  await expect(page.getByRole('radio', { name: /^Consultant fee/ })).not.toBeChecked();
+  await page.getByRole('radio', { name: /^Visiting consultant fee/ }).check();
+  await expect(clinicFee).not.toBeChecked();
+  await page.getByRole('radio', { name: /^Consultant fee/ }).check();
   const date = new Date();
   date.setDate(date.getDate() + 1);
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
