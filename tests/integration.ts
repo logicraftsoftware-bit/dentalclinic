@@ -1468,6 +1468,7 @@ test('reception bills procedures by doctor, separates lab charges and collects s
   await request(`/clinic/appointments/${appointment.id}`, 'PATCH', { status: 'CHECKED_IN' }, reception.cookie);
   assert.equal((await request(`${path}/bills`, 'POST', { ...bill, lines: [{ ...bill.lines[0], doctorId: outside.id }] }, reception.cookie)).status, 404);
   assert.equal((await request(`${path}/bills`, 'POST', { ...bill, lines: [{ ...bill.lines[0], chargePaise: -1 }] }, reception.cookie)).status, 400);
+  assert.equal((await request(`${path}/checkout`, 'POST', { checkoutKey: randomUUID(), lines: [{ ...bill.lines[0], doctorId: outside.id }], discount: { type: 'AMOUNT', value: 0 }, payment: { amountPaise: 0, method: 'CASH' } }, reception.cookie)).status, 404);
   const saved = await request(`${path}/bills`, 'POST', bill, reception.cookie);
   assert.equal(saved.status, 201, JSON.stringify(saved.data));
   assert.equal(saved.data.length, 4);
@@ -1503,7 +1504,7 @@ test('reception checkout atomically discounts bills, records partial payments an
   const patient = await create('patients', { name: 'Checkout patient', phone: '9000092233' });
   const appointment = await create('appointments', { patientId: patient.id, doctorId: doctor.id, feeType: 'clinic', startsAt: new Date(Date.now() + 86400000).toISOString() });
   const path = `/clinic/reception/${appointment.id}`;
-  const body = { checkoutKey: randomUUID(), lines: [{ name: 'Restoration', doctorId: doctor.id, chargePaise: 100000, labChargePaise: 20000 }], discount: { type: 'AMOUNT', value: 10001, reason: 'Patient concession' }, payment: { amountPaise: 60000, method: 'UPI', reference: 'UPI-123' } };
+  const body = { checkoutKey: randomUUID(), lines: Array.from({ length: 4 }, (_, index) => ({ name: `Restoration ${index + 1}`, doctorId: doctor.id, chargePaise: 25000, labChargePaise: index === 0 ? 20000 : 0 })), discount: { type: 'AMOUNT', value: 10001, reason: 'Patient concession' }, payment: { amountPaise: 60000, method: 'UPI', reference: 'UPI-123' } };
   assert.equal((await request(`${path}/checkout`, 'POST', body, b.cookie)).status, 404);
   const first = await request(`${path}/checkout`, 'POST', body, clinic.cookie);
   assert.equal(first.status, 201, JSON.stringify(first.data));
@@ -1514,14 +1515,14 @@ test('reception checkout atomically discounts bills, records partial payments an
   assert.deepEqual(replay.data, first.data);
   assert.equal((await request(`${path}/checkout`, 'POST', { ...body, payment: { ...body.payment, amountPaise: 1 } }, clinic.cookie)).status, 409);
   let detail = (await request(path, 'GET', undefined, clinic.cookie)).data;
-  assert.equal(detail.invoices.length, 3);
+  assert.equal(detail.invoices.length, 6);
   assert.equal(detail.appointment.paymentStatus, 'PARTIAL');
   assert.equal(detail.payments.reduce((n: number, p: any) => n + p.amountPaise, 0), 60000);
   assert.ok(detail.payments.every((p: any) => p.method === 'UPI' && p.reference === 'UPI-123'));
   const invalid = { ...body, checkoutKey: randomUUID(), payment: { ...body.payment, amountPaise: 1000000 } };
   assert.equal((await request(`${path}/checkout`, 'POST', invalid, clinic.cookie)).status, 400);
   detail = (await request(path, 'GET', undefined, clinic.cookie)).data;
-  assert.equal(detail.invoices.length, 3, 'Invalid checkout must roll back new charges and discount');
+  assert.equal(detail.invoices.length, 6, 'Invalid checkout must roll back new charges and discount');
   const before = detail.invoices.reduce((n: number, i: any) => n + i.totalPaise, 0);
   assert.equal(before, 139999);
   const final = { checkoutKey: randomUUID(), lines: [], discount: { type: 'PERCENT', value: 10, reason: 'Balance concession' }, payment: { amountPaise: 71999, method: 'BANK', reference: 'BANK-456' } };
@@ -1540,6 +1541,23 @@ test('reception checkout atomically discounts bills, records partial payments an
   assert.equal(complimentary.data.invoices.find((i: any) => i.description === 'Complimentary review').totalPaise, 0);
   const badPercent = { ...free, checkoutKey: randomUUID(), discount: { type: 'PERCENT', value: 101, reason: '' } };
   assert.equal((await request(`${path}/checkout`, 'POST', badPercent, clinic.cookie)).status, 400);
+  const commissions = await db.commission.findMany({ where: { tenantId: clinic.tenantId } });
+  const procedureIds = new Set(detail.invoices.filter((i: any) => i.chargeKind === 'PROCEDURE').map((i: any) => i.id));
+  for (const payment of detail.payments) {
+    const commission = commissions.find(c => c.paymentId === payment.id);
+    if (procedureIds.has(payment.invoiceId)) assert.equal(commission?.amountPaise, Math.round(payment.amountPaise * 0.4));
+    else assert.equal(commission, undefined, 'Lab and visit charges must not earn commissions');
+  }
+  const clinicalAppointment = await create('appointments', { patientId: patient.id, doctorId: doctor.id, feeType: 'clinic', startsAt: new Date(Date.now() + 2 * 86400000).toISOString() });
+  const close = await request('/clinic/dental-visits/' + clinicalAppointment.id, 'PUT', { complaint: 'Caries', diagnosis: 'Restoration', consent: true, finalize: true, lines: [{ tooth: '36', name: 'Clinical restoration', pricePaise: 40000, labChargePaise: 10000 }] }, clinic.cookie);
+  assert.equal(close.status, 200, JSON.stringify(close.data));
+  const clinicalCheckout = await request('/clinic/reception/' + clinicalAppointment.id + '/checkout', 'POST', { checkoutKey: randomUUID(), lines: [], discount: { type: 'AMOUNT', value: 0, reason: '' }, payment: { amountPaise: 80000, method: 'CASH', reference: '' } }, clinic.cookie);
+  assert.equal(clinicalCheckout.status, 201, JSON.stringify(clinicalCheckout.data));
+  assert.equal(clinicalCheckout.data.balancePaise, 0);
+  const clinicalInvoice = clinicalCheckout.data.invoices.find((i: any) => i.sessionId);
+  const clinicalPayment = await db.payment.findFirstOrThrow({ where: { invoiceId: clinicalInvoice.id } });
+  assert.equal((await db.commission.findFirstOrThrow({ where: { paymentId: clinicalPayment.id } })).amountPaise, 16000);
+
 });
 
 test('ordinary clinic reads do not acquire or modify the clinic write lock', async () => {

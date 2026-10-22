@@ -416,7 +416,7 @@ export async function clinic<T>(
     membership: any;
     tx: Prisma.TransactionClient;
   }) => Promise<T>,
-  options: { accessOnly?: boolean; hostname?: string; readOnly?: boolean } = {},
+  options: { accessOnly?: boolean; hostname?: string; readOnly?: boolean; transactionTimeoutMs?: number } = {},
 ) {
   assert(actor.tenantId, 403, 'Choose an authorized clinic workspace.');
   const tenantId = actor.tenantId;
@@ -491,7 +491,7 @@ export async function clinic<T>(
         tx,
       });
     },
-    { maxWait: 15000, timeout: 20000 },
+    { maxWait: 15000, timeout: options.transactionTimeoutMs ?? 20000 },
   );
 }
 export function verifyWebhook(raw: Buffer, signature: string, secret: string) {

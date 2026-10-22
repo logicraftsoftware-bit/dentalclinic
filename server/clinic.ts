@@ -28,7 +28,7 @@ import { doctorAvailableAt, doctorBranches } from './doctor-branches.js';
 
 export const clinicApi = Router();
 const run =
-  (capability: string, fn: any, accessOnly = false, readOnly = false) =>
+  (capability: string, fn: any, accessOnly = false, readOnly = false, transactionTimeoutMs = 20000) =>
   (req: any, res: any, next: any) =>
     authenticate(req)
       .then((actor) =>
@@ -38,6 +38,7 @@ const run =
           (ctx) => transactionalReply(req, ctx.store, (reply) => fn(req, reply, ctx, actor)),
           {
             accessOnly, hostname: req.hostname,
+            transactionTimeoutMs,
             // Export and downloads write audit records and must retain the write transaction.
             readOnly: readOnly || (req.method === 'GET' && req.path !== '/export' && !req.path.endsWith('/download')),
           },

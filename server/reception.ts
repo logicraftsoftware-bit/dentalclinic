@@ -1,7 +1,7 @@
 import type { Router } from 'express';
 import { z } from 'zod';
 import { assert, id, money, hash } from './core.js';
-import { recordInvoicePayment } from './patient-payments.js';
+import { recordCheckoutPayment } from './patient-payments.js';
 import { doctorAvailableAt } from './doctor-branches.js';
 
 // The same source keys are used when the doctor closes a visit, so reception
@@ -63,6 +63,30 @@ async function saveReceptionBill(store: any, appointment: any, input: z.infer<ty
     return invoices;
 }
 
+async function createCheckoutCharges({ store, tx, tenant }: any, appointment: any, input: any) {
+  // Verify the scope and all relationships once before writing any bill rows.
+  await store.get('patient', appointment.patientId);
+  const doctorIds = [...new Set(input.lines.map((line: any) => line.doctorId))];
+  const doctors = doctorIds.length ? await store.list('doctor', { id: { in: doctorIds } }) : [];
+  assert(doctors.length === doctorIds.length, 404, 'Doctor not found in your clinic.');
+  assert(doctors.every((d: any) => d.active && (!appointment.branchId || doctorAvailableAt(d, appointment.branchId))), 400, 'Choose an active doctor from this appointment branch.');
+  const invoices = await store.list('invoice', { appointmentId: appointment.id });
+  const base = { tenantId: tenant.id, patientId: appointment.patientId, appointmentId: appointment.id };
+  const rows: any[] = [];
+  const fees = [['Consultant fee', appointment.consultationPaise], ['Visiting consultant fee', appointment.visitingConsultationPaise], ['Clinic fee', appointment.clinicFeePaise]];
+  for (const [index, [description, amount]] of fees.entries()) {
+    if (Number(amount) > 0 && !invoices.some((i: any) => i.description === description)) rows.push({ ...base, sourceKey: `${appointment.id}:fee:${index}`, description: String(description), chargeKind: 'VISIT', totalPaise: Number(amount) });
+  }
+  for (const [index, line] of input.lines.entries()) {
+    const prefix = `reception:${appointment.id}:${input.checkoutKey}:${index}`;
+    if (line.chargePaise) rows.push({ ...base, doctorId: line.doctorId, sourceKey: `${prefix}:procedure`, chargeKind: 'PROCEDURE', description: line.name, totalPaise: line.chargePaise });
+    if (line.labChargePaise) rows.push({ ...base, doctorId: line.doctorId, sourceKey: `${prefix}:lab`, chargeKind: 'LAB', description: `Lab: ${line.name}`, totalPaise: line.labChargePaise });
+  }
+  if (rows.length) await tx.invoice.createMany({ data: rows });
+  assert(rows.length || invoices.length, 400, 'Add a procedure to create a bill.');
+  return store.list('invoice', { appointmentId: appointment.id }, { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+}
+
 export function registerReceptionRoutes(router: Router, run: any) {
   router.get('/reception/:id', run('billing', async (req: any, res: any, { store }: any) => {
     const appointment = await store.get('appointment', id.parse(req.params.id));
@@ -85,6 +109,8 @@ export function registerReceptionRoutes(router: Router, run: any) {
     res.status(201).json(await saveReceptionBill(store, appointment, input, actor));
   }));
 
+  // Leave headroom for large bills on a remote database; all charges, discounts
+  // and payments still commit together, or roll back together.
   router.post('/reception/:id/checkout', run('billing', async (req: any, res: any, ctx: any, actor: any) => {
     const { store, tx, tenant } = ctx;
     const appointment = await store.get('appointment', id.parse(req.params.id));
@@ -101,8 +127,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
       assert(previous.fingerprint === fingerprint, 409, 'This checkout was already saved with different details. Refresh the bill before continuing.');
       res.json(previous.body); return;
     }
-    await saveReceptionBill(store, appointment, { billKey: input.checkoutKey, lines: input.lines }, actor);
-    let invoices = await store.list('invoice', { appointmentId: appointment.id }, { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+    let invoices = await createCheckoutCharges(ctx, appointment, input);
     const balance = invoices.reduce((n: number, i: any) => n + i.totalPaise - i.paidPaise, 0);
     assert(input.discount.type !== 'PERCENT' || input.discount.value <= 100, 400, 'Discount percentage must be between 0 and 100.');
     assert(input.discount.type !== 'AMOUNT' || Number.isInteger(input.discount.value), 400, 'Discount must be a whole number of paise.');
@@ -110,6 +135,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
     assert(discount <= balance, 400, 'Discount cannot exceed the unpaid balance.');
     assert(input.payment.amountPaise <= balance - discount, 400, 'Paid amount cannot exceed the balance after discount.');
     let remainingDiscount = discount, remainingBalance = balance;
+    const discountAudits = [];
     for (const invoice of invoices) {
       const due = invoice.totalPaise - invoice.paidPaise;
       if (!due) continue;
@@ -117,23 +143,18 @@ export function registerReceptionRoutes(router: Router, run: any) {
       remainingDiscount -= share; remainingBalance -= due;
       if (!share) continue;
       const net = invoice.totalPaise - share;
-      await store.update('invoice', invoice.id, { totalPaise: net, discountPaise: (invoice.discountPaise || 0) + share, discountReason: input.discount.reason || invoice.discountReason || '', status: net === invoice.paidPaise ? 'PAID' : invoice.paidPaise ? 'PARTIAL' : 'UNPAID' });
-      await store.audit(actor.userId, 'invoice.discount.applied', invoice.id);
+      const change = { totalPaise: net, discountPaise: (invoice.discountPaise || 0) + share, discountReason: input.discount.reason || invoice.discountReason || '', status: net === invoice.paidPaise ? 'PAID' : invoice.paidPaise ? 'PARTIAL' : 'UNPAID' };
+      await tx.invoice.update({ where: { tenantId_id: { tenantId: tenant.id, id: invoice.id } }, data: change });
+      Object.assign(invoice, change);
+      discountAudits.push({ tenantId: tenant.id, actorId: actor.userId, action: 'invoice.discount.applied', recordId: invoice.id });
     }
-    invoices = await store.list('invoice', { appointmentId: appointment.id }, { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
-    let remainingPayment = input.payment.amountPaise;
-    for (const invoice of invoices) {
-      const amountPaise = Math.min(remainingPayment, invoice.totalPaise - invoice.paidPaise);
-      if (!amountPaise) continue;
-      await recordInvoicePayment(ctx, { invoiceId: invoice.id, amountPaise, method: input.payment.method, reference: input.payment.reference, idempotencyKey: `${input.checkoutKey}:${invoice.id}` }, actor);
-      remainingPayment -= amountPaise;
-    }
-    invoices = await store.list('invoice', { appointmentId: appointment.id }, { orderBy: { createdAt: 'asc' } });
+    if (discountAudits.length) await tx.clinicAudit.createMany({ data: discountAudits });
+    invoices = await recordCheckoutPayment(ctx, invoices, input.payment, input.checkoutKey, actor);
     const total = invoices.reduce((n: number, i: any) => n + i.totalPaise, 0), paid = invoices.reduce((n: number, i: any) => n + i.paidPaise, 0);
     await tx.appointment.update({ where: { tenantId_id: { tenantId: tenant.id, id: appointment.id } }, data: { paymentStatus: paid >= total ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING' } });
     const result = { invoices, totalPaise: total, paidPaise: paid, balancePaise: total - paid };
     await store.audit(actor.userId, 'reception.checkout.saved', appointment.id);
     await store.create('idempotencyRecord', { key, fingerprint, status: 201, body: JSON.parse(JSON.stringify(result)), headers: {} });
     res.status(201).json(result);
-  }));
+  }, false, false, 120000));
 }

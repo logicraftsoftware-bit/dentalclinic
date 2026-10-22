@@ -161,6 +161,11 @@ app.use((error: any, _req: any, res: any, _next: any) => {
     res.status(413).json({ error: 'Document must be 3 MB or smaller.' });
     return;
   }
+  if (error.code === 'P2028') {
+    log.error({ ...databaseDiagnostic(error), name: error.name }, 'Database transaction did not complete');
+    res.status(503).json({ error: 'The database took too long to save this request. Keep your entries and retry; completed saves will not be duplicated.' });
+    return;
+  }
   log.error({ ...databaseDiagnostic(error), name: error.name }, 'Request failed');
   res.status(500).json({ error: 'The request could not be completed.' });
 });
