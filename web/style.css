@@ -3580,7 +3580,6 @@ td .text-button {
 .reception-saved-bill td:not(:first-child) { white-space: nowrap; }
 .reception-saved-bill td small { white-space: normal; max-width: 160px; }
 .reception-receipt { display: none; }
-.reception-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media(max-width: 800px) { .reception-checkout-grid { grid-template-columns: 1fr; }.reception-full-page .reception-billing { padding: 16px; }.reception-payment-fields { grid-template-columns: 1fr; }.reception-field-wide { grid-column: auto; } }
 @media print {
   .reception-full-page > :not(.reception-billing), .reception-full-page .reception-billing > :not(.reception-receipt) { display: none !important; }

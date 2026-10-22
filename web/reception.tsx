@@ -64,7 +64,7 @@ function BillingDesk({ appointmentId, action, tick, close, zone, workspace }: an
     <form onSubmit={save}>
       <fieldset disabled={busy || blocked} className="reception-procedures">
         <div className="reception-section-heading"><div><h3>Procedures on this bill</h3><p>Add treatment charges and assign the treating doctor.</p></div><span>{lines.length} procedures · {new Set(lines.map(line => line.doctorId)).size} doctors</span></div>
-        <div className="table-wrap"><table className="reception-procedure-table"><thead><tr><th>#</th><th>Procedure</th><th>Doctor</th><th>Charge (₹)</th><th className="reception-lab">Lab charge (₹)<small>Staff only</small></th><th><span className="sr-only">Remove</span></th></tr></thead><tbody>
+        <div className="table-wrap"><table className="reception-procedure-table"><thead><tr><th>#</th><th>Procedure</th><th>Doctor</th><th>Charge (₹)</th><th className="reception-lab">Lab charge (₹)<small>Staff only</small></th><th aria-label="Remove procedure"></th></tr></thead><tbody>
           {lines.map((line, index) => <tr key={line.key}><td>{index + 1}</td><td>
             <select aria-label={`Charge master ${index + 1}`} value="" onChange={e => { const charge = data.charges.find((c: any) => c.id === e.target.value); if (charge) edit(line.key, { name: charge.name, charge: String(charge.pricePaise / 100), lab: String((charge.labChargePaise || 0) / 100) }); }}><option value="">Choose from charge master</option>{data.charges.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <input required maxLength={200} aria-label={`Procedure ${index + 1}`} placeholder="Treatment / procedure name" value={line.name} onChange={e => edit(line.key, { name: e.target.value })} />
