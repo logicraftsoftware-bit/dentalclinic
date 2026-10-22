@@ -26,6 +26,7 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   expect(signup.status()).toBe(201);
   await page.request.post('/api/auth/login', { headers, data: { email, password } });
   async function create(resource: string, data: any) { const r = await page.request.post(`/api/clinic/${resource}`, { headers, data }); expect(r.status()).toBe(201); return r.json(); }
+  expect((await page.request.patch('/api/clinic/settings', { headers, data: { name: 'Medicity Guwahati Dental Clinic', phone: '9127539374', settings: { address: '123, GS Road, Guwahati - 781001, Assam', contactEmail: 'medicitydental@gmail.com', website: 'https://www.medicitydental.com', tagline: 'Your Oral Health, Our Priority' } } })).status()).toBe(200);
   const branch = await create('branches', { name: 'Reception branch' });
   const first = await create('doctors', { name: 'Dr Reception One', branchId: branch.id });
   const second = await create('doctors', { name: 'Dr Reception Two', branchId: branch.id });
@@ -77,8 +78,13 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await expect(page.getByRole('button', { name: 'Print saved bill', exact: true })).toBeVisible();
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.reception-receipt')).toBeVisible();
-  await expect(page.locator('.reception-receipt')).toContainText('Discount: ₹200');
-  await page.screenshot({ path: '.tools/screenshots/reception-receipt.png', fullPage: true });
+  await expect(page.locator('.reception-receipt .receipt-summary')).toContainText('Total Discount₹200.00');
+  await expect(page.locator('.reception-receipt .receipt-summary')).toContainText('Net Payable₹1,800.00');
+  await expect(page.locator('.reception-receipt .receipt-contact')).toContainText('medicitydental@gmail.com');
+  await expect(page.locator('.reception-receipt .receipt-footer')).toContainText('www.medicitydental.com');
+  await page.locator('.reception-receipt').screenshot({ path: '.tools/screenshots/reception-receipt.png' });
+  const receiptPdf = await page.pdf({ path: '.tools/screenshots/reception-receipt.pdf', format: 'A4', printBackground: true });
+  expect((receiptPdf.toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length).toBe(1);
   await page.emulateMedia({ media: 'screen' });
   const saved = await (await page.request.get(`/api/clinic/reception/${appointment.id}`)).json();
   expect(saved.invoices.find((i: any) => i.description === 'Scaling').doctorId).toBe(second.id);

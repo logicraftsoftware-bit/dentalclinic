@@ -1,3 +1,4 @@
+import { BillReceipt } from './bill-receipt';
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react';
 import { api, money } from './api';
@@ -112,14 +113,7 @@ function BillingDesk({ appointmentId, action, tick, close, zone, workspace }: an
       <h3>Payment history</h3>
       {!data.payments?.length ? <p>No payments recorded.</p> : <div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date & time</th><th>Method</th><th>Reference</th><th>Received</th></tr></thead><tbody>{data.payments.map((p: any) => <tr key={p.id}><td>{p.id.slice(0, 8)}</td><td>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.createdAt))}</td><td>{p.method}</td><td>{p.reference || '—'}</td><td>{money(p.amountPaise)}</td></tr>)}</tbody></table></div>}
     </section>
-    <section className="reception-receipt">
-      <h1>{workspace?.tenant?.name || 'Dental clinic'}</h1><p>{workspace?.tenant?.settings?.address}</p><p>{workspace?.tenant?.settings?.invoiceHeader}</p><h2>Patient bill</h2>
-      <p>{data.patient.name} · {data.patient.phone}</p><p>Visit: {new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium' }).format(new Date(appointment.startsAt))} · {appointment.id.slice(0, 8)}</p>
-      <table><thead><tr><th>Description</th><th>Gross</th><th>Discount</th><th>Net</th></tr></thead><tbody>{data.invoices.map((i: any) => <tr key={i.id}><td>{i.description}</td><td>{money(i.totalPaise + (i.discountPaise || 0))}</td><td>{money(i.discountPaise || 0)}</td><td>{money(i.totalPaise)}</td></tr>)}</tbody></table>
-      <p>Subtotal: {money(savedNet + savedDiscount)} · Discount: {money(savedDiscount)}</p><p><strong>Net payable: {money(savedNet)} · Paid: {money(savedPaid)} · Balance: {money(savedNet - savedPaid)}</strong></p>
-      <h3>Payment receipts</h3>{(data.payments || []).map((p: any) => <p key={p.id}>{p.id.slice(0, 8)} · {new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium' }).format(new Date(p.createdAt))} · {p.method} · {money(p.amountPaise)} · {p.reference}</p>)}
-      <p>{workspace?.tenant?.settings?.invoiceFooter || 'Thank you for your trust.'}</p>
-    </section>
+    <BillReceipt data={data} workspace={workspace} zone={zone} />
   </section>;
 }
 

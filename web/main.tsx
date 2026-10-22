@@ -2755,6 +2755,9 @@ function ClinicSettings({ workspace, tick, modal, action, navigate }: any) {
                 { key: 'name', label: 'Clinic name', value: t.name, required: true },
                 { key: 'phone', label: 'Contact phone', value: t.phone },
                 { key: 'address', label: 'Address', type: 'textarea', value: t.settings?.address },
+                { key: 'contactEmail', label: 'Clinic email', type: 'email', value: t.settings?.contactEmail },
+                { key: 'website', label: 'Clinic website', type: 'url', value: t.settings?.website },
+                { key: 'tagline', label: 'Clinic tagline', value: t.settings?.tagline },
                 { key: 'logoUrl', label: 'Logo URL', type: 'url', value: t.settings?.logoUrl },
                 {
                   key: 'timezone',

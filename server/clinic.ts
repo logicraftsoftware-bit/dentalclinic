@@ -934,6 +934,9 @@ clinicApi.patch(
           settings: z
             .object({
               address: string.optional(),
+              contactEmail: z.union([z.string().email().max(200), z.literal('')]).optional(),
+              website: z.union([z.string().url().max(1000), z.literal('')]).optional(),
+              tagline: z.string().trim().max(200).optional(),
               logoUrl: z.union([z.string().url().max(1000), z.literal('')]).optional(),
               invoiceHeader: string.optional(),
               invoiceFooter: string.optional(),

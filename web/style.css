@@ -3585,10 +3585,60 @@ td .text-button {
   .reception-full-page > :not(.reception-billing), .reception-full-page .reception-billing > :not(.reception-receipt) { display: none !important; }
   .reception-full-page .reception-billing { padding: 0; border: 0; box-shadow: none; }
   .reception-receipt, .reception-receipt * { visibility: visible !important; }
-  .reception-receipt { display: block; position: absolute; left: 0; top: 0; width: 100%; background: white; padding: 24px; }
-  .reception-receipt table { width: 100%; border-collapse: collapse; }
-  .reception-receipt td, .reception-receipt th { text-align: left; padding: 10px; border-bottom: 1px solid #ddd; }
+  .reception-full-page { page: reception-bill; }
+  .reception-receipt { display: block; position: absolute; left: 0; top: 0; width: 186mm; max-width: 100%; background: #fff; padding: 0; font: 9pt/1.35 Arial, sans-serif; color: #152333; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .reception-receipt * { box-sizing: border-box; }
+  .reception-receipt h1, .reception-receipt h2, .reception-receipt h3, .reception-receipt p, .reception-receipt dl, .reception-receipt dd { margin: 0; }
+  .reception-receipt .receipt-letterhead { display: flex; justify-content: space-between; align-items: center; gap: 6mm; border-bottom: .6mm solid #00a3a4; padding-bottom: 3mm; margin-bottom: 3mm; break-inside: avoid; }
+  .reception-receipt .receipt-brand { display: flex; align-items: center; gap: 3mm; flex: 1; min-width: 0; }
+  .reception-receipt .receipt-brand img, .reception-receipt .receipt-tooth { width: 19mm; height: 20mm; object-fit: contain; flex: 0 0 19mm; }
+  .reception-receipt .receipt-brand h1 { color: #075779; font-size: 21pt; line-height: 1.1; font-weight: 700; overflow-wrap: anywhere; }
+  .reception-receipt .receipt-contact { max-width: 44%; font-size: 8pt; }
+  .reception-receipt .receipt-contact p { display: flex; align-items: start; gap: 2mm; margin: 1mm 0; overflow-wrap: anywhere; }
+  .reception-receipt .receipt-contact svg { width: 3mm; height: 3mm; flex-shrink: 0; color: #009b98; margin-top: .5mm; }
+  .reception-receipt .receipt-title-row { display: flex; align-items: start; justify-content: space-between; gap: 4mm; margin-bottom: 3mm; break-inside: avoid; }
+  .reception-receipt .receipt-title-row h2 { font-size: 14pt; color: #09253d; margin: 2mm 0 1mm; line-height: 1.2; }
+  .reception-receipt .receipt-title-row > div { flex: 1; }
+  .reception-receipt .receipt-title-row p { font-size: 10pt; color: #3c5061; }
+  .reception-receipt .receipt-invoice-meta { display: grid; grid-template-columns: 19mm 1fr; gap: 1mm 2mm; min-width: 66mm; padding: 3mm; border: .25mm solid #a0d6c5; border-radius: 2mm; background: #e9f6f1; font-size: 8pt; }
+  .reception-receipt .receipt-invoice-meta dt, .reception-receipt .receipt-invoice-meta dd { font-weight: 700; }
+  .reception-receipt .receipt-patient-info { display: grid; grid-template-columns: 1fr 1.1fr; gap: 4mm; background: #f6f8f9; border: .25mm solid #dae1e5; border-radius: 2mm; padding: 3mm; margin-bottom: 3mm; break-inside: avoid; }
+  .reception-receipt .receipt-patient-info dl { display: grid; grid-template-columns: 25mm 1fr; gap: 1.5mm 2mm; align-content: start; }
+  .reception-receipt .receipt-patient-info dl + dl { border-left: .25mm solid #e0e5e7; padding-left: 4mm; }
+  .reception-receipt .receipt-patient-info dt { font-weight: 600; }
+  .reception-receipt .receipt-patient-info dd { overflow-wrap: anywhere; }
+  .reception-receipt table { width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed; }
+  .reception-receipt th, .reception-receipt td { border: .25mm solid #cdd5da; padding: 1.4mm 2.5mm; text-align: left; vertical-align: top; color: #152333; overflow-wrap: anywhere; }
+  .reception-receipt th { background: #e4f4ee; color: #064f40; font-size: 8.5pt; font-weight: 700; text-transform: none; letter-spacing: 0; }
+  .reception-receipt th:first-child, .reception-receipt td:first-child { width: 6%; text-align: center; }
+  .reception-receipt .receipt-charge-table th:nth-child(2) { width: 37%; }
+  .reception-receipt .receipt-charge-table th:nth-child(n+3), .reception-receipt .receipt-charge-table td:nth-child(n+3) { text-align: right; }
+  .reception-receipt .receipt-summary { width: 63%; border: .25mm solid #dae1e5; border-radius: 2mm; padding: 3mm; background: #f7f9fa; margin: 3mm 0; break-inside: avoid; }
+  .reception-receipt h3 { color: #075844; font-size: 13pt; line-height: 1.25; margin-bottom: 2mm; }
+  .reception-receipt .receipt-summary dl { display: grid; grid-template-columns: 1fr auto; align-items: stretch; }
+  .reception-receipt .receipt-summary dt, .reception-receipt .receipt-summary dd { padding: 1.2mm 2mm; }
+  .reception-receipt .receipt-summary dd { text-align: right; font-weight: 700; white-space: nowrap; }
+  .reception-receipt .receipt-summary .receipt-highlight { background: #dff3e9; color: #034c3c; font-weight: 700; font-size: 10.5pt; margin: .7mm 0; }
+  .reception-receipt .receipt-summary .receipt-outstanding { color: #c92920; }
+  .reception-receipt .receipt-payment-history { margin-top: 3mm; }
+  .reception-receipt .receipt-payment-history th:nth-child(2) { width: 15%; }
+  .reception-receipt .receipt-payment-history th:nth-child(3) { width: 27%; }
+  .reception-receipt .receipt-payment-history th:nth-child(4) { width: 12%; }
+  .reception-receipt .receipt-payment-history th:nth-child(5) { width: 22%; }
+  .reception-receipt .receipt-payment-history th:last-child, .reception-receipt .receipt-payment-history td:last-child { text-align: right; }
+  .reception-receipt .receipt-payment-history td { font-size: 8pt; }
+  .reception-receipt .receipt-note { display: flex; gap: 3mm; background: #e6f5ee; border: .25mm solid #b9e6d4; border-radius: 2mm; margin-top: 3mm; padding: 3mm 4mm; break-inside: avoid; }
+  .reception-receipt .receipt-note svg { width: 6mm; height: 6mm; color: #075844; flex-shrink: 0; }
+  .reception-receipt .receipt-note ol { padding-left: 4mm; margin: 1mm 0 0; }
+  .reception-receipt .receipt-footer { display: flex; justify-content: space-between; align-items: end; gap: 5mm; border-top: .6mm solid #00a3a4; padding-top: 3mm; margin-top: 3mm; break-inside: avoid; }
+  .reception-receipt .receipt-footer strong { color: #075844; }
+  .reception-receipt .receipt-footer p { color: #3c5061; margin-top: .5mm; }
+  .reception-receipt .receipt-footer > span { overflow-wrap: anywhere; max-width: 45%; text-align: right; }
+  .reception-receipt thead { display: table-header-group; }
+  .reception-receipt tr { break-inside: avoid; }
+  .reception-receipt table tr:last-child td { border-bottom: .25mm solid #cdd5da; }
 }
+@page reception-bill { size: A4; margin: 12mm; }
 @media (max-width: 1150px) { .reception-layout { grid-template-columns: 230px minmax(0, 1fr); gap: 16px; }.reception-patients, .reception-billing { padding: 18px; } }
 @media (max-width: 800px) { .reception-layout { grid-template-columns: 1fr; }.reception-calendar { max-width: 100%; }.reception-mini-calendar { max-width: 360px; margin-left: auto; margin-right: auto; }.reception-stats { grid-template-columns: repeat(3, 1fr); }.reception-stats span { display: grid; gap: 8px; }.reception-filters { flex-wrap: wrap; }.reception-section-heading { align-items: start; flex-wrap: wrap; } }
 .appointment-selection { padding: 12px 0; color: #287c6e; }
