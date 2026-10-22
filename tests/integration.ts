@@ -1484,6 +1484,55 @@ test('reception bills procedures by doctor, separates lab charges and collects s
   assert.equal(detail.data.appointment.paymentStatus, 'PAID');
 });
 
+test('reception checkout atomically discounts bills, records partial payments and protects retries', async () => {
+  const clinic = await register('Checkout discounts clinic');
+  async function create(resource: string, body: any) {
+    const r = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie);
+    assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data;
+  }
+  const doctor = await create('doctors', { name: 'Checkout dentist' });
+  const patient = await create('patients', { name: 'Checkout patient', phone: '9000092233' });
+  const appointment = await create('appointments', { patientId: patient.id, doctorId: doctor.id, feeType: 'clinic', startsAt: new Date(Date.now() + 86400000).toISOString() });
+  const path = `/clinic/reception/${appointment.id}`;
+  const body = { checkoutKey: randomUUID(), lines: [{ name: 'Restoration', doctorId: doctor.id, chargePaise: 100000, labChargePaise: 20000 }], discount: { type: 'AMOUNT', value: 10001, reason: 'Patient concession' }, payment: { amountPaise: 60000, method: 'UPI', reference: 'UPI-123' } };
+  assert.equal((await request(`${path}/checkout`, 'POST', body, b.cookie)).status, 404);
+  const first = await request(`${path}/checkout`, 'POST', body, clinic.cookie);
+  assert.equal(first.status, 201, JSON.stringify(first.data));
+  assert.equal(first.data.totalPaise, 139999); assert.equal(first.data.balancePaise, 79999);
+  assert.equal(first.data.invoices.reduce((n: number, i: any) => n + i.discountPaise, 0), 10001, 'Discount allocation must preserve every paise');
+  const replay = await request(`${path}/checkout`, 'POST', body, clinic.cookie);
+  assert.equal(replay.status, 200);
+  assert.deepEqual(replay.data, first.data);
+  assert.equal((await request(`${path}/checkout`, 'POST', { ...body, payment: { ...body.payment, amountPaise: 1 } }, clinic.cookie)).status, 409);
+  let detail = (await request(path, 'GET', undefined, clinic.cookie)).data;
+  assert.equal(detail.invoices.length, 3);
+  assert.equal(detail.appointment.paymentStatus, 'PARTIAL');
+  assert.equal(detail.payments.reduce((n: number, p: any) => n + p.amountPaise, 0), 60000);
+  assert.ok(detail.payments.every((p: any) => p.method === 'UPI' && p.reference === 'UPI-123'));
+  const invalid = { ...body, checkoutKey: randomUUID(), payment: { ...body.payment, amountPaise: 1000000 } };
+  assert.equal((await request(`${path}/checkout`, 'POST', invalid, clinic.cookie)).status, 400);
+  detail = (await request(path, 'GET', undefined, clinic.cookie)).data;
+  assert.equal(detail.invoices.length, 3, 'Invalid checkout must roll back new charges and discount');
+  const before = detail.invoices.reduce((n: number, i: any) => n + i.totalPaise, 0);
+  assert.equal(before, 139999);
+  const final = { checkoutKey: randomUUID(), lines: [], discount: { type: 'PERCENT', value: 10, reason: 'Balance concession' }, payment: { amountPaise: 71999, method: 'BANK', reference: 'BANK-456' } };
+  const settled = await request(`${path}/checkout`, 'POST', final, clinic.cookie);
+  assert.equal(settled.status, 201, JSON.stringify(settled.data));
+  assert.equal(settled.data.totalPaise, 131999); assert.equal(settled.data.paidPaise, 131999); assert.equal(settled.data.balancePaise, 0);
+  assert.ok(settled.data.invoices.every((i: any) => i.totalPaise >= i.paidPaise));
+  detail = (await request(path, 'GET', undefined, clinic.cookie)).data;
+  assert.equal(detail.appointment.paymentStatus, 'PAID');
+  assert.equal(detail.invoices.reduce((n: number, i: any) => n + i.discountPaise, 0), 18001);
+  assert.equal(detail.payments.reduce((n: number, p: any) => n + p.amountPaise, 0), 131999);
+  const free = { ...body, checkoutKey: randomUUID(), lines: [{ name: 'Complimentary review', doctorId: doctor.id, chargePaise: 500, labChargePaise: 0 }], discount: { type: 'PERCENT', value: 100, reason: 'Complimentary' }, payment: { amountPaise: 0, method: 'CASH', reference: '' } };
+  const complimentary = await request(`${path}/checkout`, 'POST', free, clinic.cookie);
+  assert.equal(complimentary.status, 201, JSON.stringify(complimentary.data));
+  assert.equal(complimentary.data.balancePaise, 0);
+  assert.equal(complimentary.data.invoices.find((i: any) => i.description === 'Complimentary review').totalPaise, 0);
+  const badPercent = { ...free, checkoutKey: randomUUID(), discount: { type: 'PERCENT', value: 101, reason: '' } };
+  assert.equal((await request(`${path}/checkout`, 'POST', badPercent, clinic.cookie)).status, 400);
+});
+
 test('ordinary clinic reads do not acquire or modify the clinic write lock', async () => {
   const clinic = await register('Concurrent reads clinic');
   assert.equal((await request('/clinic/patients', 'POST', { name: 'Initial patient', phone: '9000023455' }, clinic.cookie)).status, 201);

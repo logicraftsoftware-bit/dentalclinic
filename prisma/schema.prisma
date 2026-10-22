@@ -355,6 +355,8 @@ model Invoice {
   chargeKind String?
   description String
   totalPaise Int
+  discountPaise Int @default(0)
+  discountReason String @default("")
   paidPaise Int @default(0)
   dueAt DateTime?
   status String @default("UNPAID")

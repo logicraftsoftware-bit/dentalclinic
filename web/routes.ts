@@ -105,6 +105,8 @@ export function parsePageRoute(location: string): PageRoute {
   }
   if (area === 'clinic' && screen === 'appointments' && detail === 'visit' && tab && uuid.test(tab) && !extra)
     return { area, screen, tab: 'visit', appointmentId: tab, title: 'Dental treatment' };
+  if (area === 'clinic' && screen === 'reception' && detail === 'billing' && tab && uuid.test(tab) && !extra)
+    return { area, screen, tab: 'billing', appointmentId: tab, title: 'Billing desk' };
   if (area === 'clinic' && screen === 'referrals' && !detail)
     return { area, screen, title: 'Internal referrals' };
   if (area === 'clinic' && screen === 'appointments' && /^\d{4}-\d{2}-\d{2}$/.test(detail || '') && !extra && (!tab || uuid.test(tab))) {
