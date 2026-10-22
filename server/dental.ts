@@ -3,6 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { assert, id, money, iso, effectiveLimits, checkLimit } from './core.js';
 import { doctorBranches, doctorAvailableAt } from './doctor-branches.js';
+import { ensureVisitFees } from './reception.js';
 
 const note = z.string().trim().max(10000).default('');
 const tooth = z.string().regex(/^(?:[1-4][1-8]|[5-8][1-5])$/, 'Select a tooth from the permanent or primary tooth list.');
@@ -113,8 +114,7 @@ export function registerDentalRoutes(router: Router, run: any, validateSlot: any
         if (line.pricePaise) await store.create('invoice', { patientId: patient.id, appointmentId: appointment.id, sessionId: session.id, sourceKey: `${encounter.id}:procedure:${index}`, description: `${line.name} - Tooth ${line.tooth}`, totalPaise: line.pricePaise });
         if (line.labChargePaise) await store.create('invoice', { patientId: patient.id, appointmentId: appointment.id, sourceKey: `${encounter.id}:lab:${index}`, description: `Lab: ${line.name} - Tooth ${line.tooth}${line.labName ? ' - ' + line.labName : ''}`, totalPaise: line.labChargePaise });
       }
-      const fees = [ ['Consultant fee', appointment.consultationPaise], ['Visiting consultant fee', appointment.visitingConsultationPaise], ['Clinic fee', appointment.clinicFeePaise] ];
-      for (const [index, [description, amount]] of fees.entries()) if (Number(amount) > 0) await store.create('invoice', { patientId: patient.id, appointmentId: appointment.id, sourceKey: `${encounter.id}:fee:${index}`, description: String(description), totalPaise: Number(amount) });
+      await ensureVisitFees(store, appointment);
       await store.create('clinicalNote', { patientId: patient.id, authorId: actor.userId, complaint: data.complaint, findings: data.findings, diagnosis: data.diagnosis, advice: data.advice });
       await store.create('chartVersion', { patientId: patient.id, authorId: actor.userId, teeth: data.teeth });
       if (data.medication) await store.create('prescription', { patientId: patient.id, authorId: actor.userId, medication: data.medication, instructions: data.advice || 'As prescribed during the visit' });
@@ -122,7 +122,9 @@ export function registerDentalRoutes(router: Router, run: any, validateSlot: any
       if (referral) await tx.internalReferral.create({ data: { tenantId: tenant.id, patientId: patient.id, encounterId: encounter.id, sourceAppointmentId: appointment.id, fromDoctorId: appointment.doctorId, toDoctorId: target.id, sourceBranchId: appointment.branchId, targetBranchId: targetBranch, reason: referral.reason } });
       encounter = await tx.dentalEncounter.update({ where: { tenantId_id: { tenantId: tenant.id, id: encounter.id } }, data: { planId: plan.id } });
       const visitInvoices = await store.list('invoice', { appointmentId: appointment.id });
-      await store.update('appointment', appointment.id, { status: 'COMPLETED', paymentStatus: visitInvoices.length ? 'PENDING' : 'NOT_REQUIRED' });
+      const total = visitInvoices.reduce((sum: number, i: any) => sum + i.totalPaise, 0);
+      const paid = visitInvoices.reduce((sum: number, i: any) => sum + i.paidPaise, 0);
+      await store.update('appointment', appointment.id, { status: 'COMPLETED', paymentStatus: !total ? 'NOT_REQUIRED' : paid >= total ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING' });
     }
     await store.audit(actor.userId, finalize ? 'dental.visit.closed' : 'dental.visit.draft', encounter.id);
     res.json(encounter);

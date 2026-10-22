@@ -1,5 +1,6 @@
 import { DentalVisit, ReferralInbox } from './dental-workflow';
 import { AppointmentCalendar } from './appointment-calendar';
+import { Reception } from './reception';
 import { AppointmentCreate } from './appointment-create';
 import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
 import { ClinicMasters } from './masters';
@@ -70,6 +71,7 @@ const clinicNav = [
   ['dashboard', 'Overview', LayoutDashboard],
   ['patients', 'Patients', Users],
   ['appointments', 'Appointments', CalendarDays],
+  ['reception', 'Reception', Wallet],
   ['referrals', 'Internal referrals', ArrowRight],
   ['treatments', 'Treatments', HeartPulse],
   ['billing', 'Billing & payments', Wallet],
@@ -82,6 +84,7 @@ const screenCaps: Record<string, string> = {
   dashboard: 'dashboard',
   patients: 'patients',
   appointments: 'appointments',
+  reception: 'billing',
   referrals: 'appointments',
   treatments: 'clinical',
   billing: 'billing',
@@ -383,7 +386,7 @@ function App() {
             <nav>
               {(mode === 'admin'
                 ? adminNav
-                : clinicNav.filter(([key]) => can(workspace, screenCaps[key]))
+                : clinicNav.filter(([key]) => can(workspace, screenCaps[key]) && (key !== 'reception' || can(workspace, 'appointments')))
               ).map(([key, label, Icon]) => (
                 <button
                   key={key}
@@ -531,7 +534,9 @@ function App() {
               ) : route.patientId && patient ? (
                 <PatientDetail patient={patient} back={() => setPatient(null)} {...common} />
               ) : screen === 'dashboard' ? (
-                <Dashboard {...common} navigate={navigate} name={me.name} />
+                workspace?.role === 'RECEPTIONIST' ? <Reception {...common} /> : <Dashboard {...common} navigate={navigate} name={me.name} />
+              ) : screen === 'reception' ? (
+                <Reception {...common} />
               ) : screen === 'patients' ? (
                 <Patients {...common} />
               ) : screen === 'appointments' ? (

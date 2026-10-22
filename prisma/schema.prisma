@@ -351,6 +351,8 @@ model Invoice {
   sessionId String?
   appointmentId String?
   sourceKey String @default(uuid())
+  doctorId String?
+  chargeKind String?
   description String
   totalPaise Int
   paidPaise Int @default(0)

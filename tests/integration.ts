@@ -1428,6 +1428,62 @@ test('appointments charge only the selected fee and preserve notes', async () =>
   assert.ok(results.data.some((p: any) => p.id === patient.id));
 });
 
+test('reception bills procedures by doctor, separates lab charges and collects scoped payments', async () => {
+  const clinic = await register('Reception desk clinic');
+  await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { overrides: { branches: null, doctors: null } } });
+  async function create(resource: string, body: any) {
+    const result = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie);
+    assert.equal(result.status, 201, JSON.stringify(result.data)); return result.data;
+  }
+  const branch = await create('branches', { name: 'Reception branch' });
+  const otherBranch = await create('branches', { name: 'Other branch' });
+  const doctor = await create('doctors', { name: 'Reception dentist', branchId: branch.id });
+  const second = await create('doctors', { name: 'Second dentist', branchId: branch.id });
+  const outside = await create('doctors', { name: 'Outside dentist', branchId: otherBranch.id });
+  const patient = await create('patients', { name: 'Reception patient', phone: '9000091122', branchId: branch.id });
+  const appointment = await create('appointments', { patientId: patient.id, doctorId: doctor.id, branchId: branch.id, feeType: 'clinic', startsAt: new Date(Date.now() + 86400000).toISOString() });
+  const email = `reception-billing-${randomUUID()}@example.test`;
+  await create('staff', { name: 'Billing receptionist', email, password, role: 'RECEPTIONIST', branchId: branch.id });
+  const reception = await request('/auth/login', 'POST', { email, password });
+  const path = `/clinic/reception/${appointment.id}`;
+  assert.equal((await request(path, 'GET', undefined, b.cookie)).status, 404);
+  let detail = await request(path, 'GET', undefined, reception.cookie);
+  assert.equal(detail.status, 200); assert.equal(detail.data.invoices.length, 0);
+  assert.ok(!detail.data.doctors.some((d: any) => d.id === outside.id));
+  assert.equal((await request(`/clinic/appointments/${appointment.id}`, 'PATCH', { status: 'ABSENT' }, reception.cookie)).status, 200);
+  const bill = { billKey: randomUUID(), lines: [
+    { name: 'Restoration', doctorId: doctor.id, chargePaise: 100000, labChargePaise: 20000 },
+    { name: 'Scaling', doctorId: second.id, chargePaise: 50000, labChargePaise: 0 },
+  ] };
+  assert.equal((await request(`${path}/bills`, 'POST', bill, reception.cookie)).status, 409);
+  await request(`/clinic/appointments/${appointment.id}`, 'PATCH', { status: 'CHECKED_IN' }, reception.cookie);
+  assert.equal((await request(`${path}/bills`, 'POST', { ...bill, lines: [{ ...bill.lines[0], doctorId: outside.id }] }, reception.cookie)).status, 404);
+  assert.equal((await request(`${path}/bills`, 'POST', { ...bill, lines: [{ ...bill.lines[0], chargePaise: -1 }] }, reception.cookie)).status, 400);
+  const saved = await request(`${path}/bills`, 'POST', bill, reception.cookie);
+  assert.equal(saved.status, 201, JSON.stringify(saved.data));
+  assert.equal(saved.data.length, 4);
+  assert.equal(saved.data.reduce((n: number, i: any) => n + i.totalPaise, 0), 200000);
+  assert.equal(saved.data.filter((i: any) => i.chargeKind === 'LAB').length, 1);
+  assert.equal(saved.data.find((i: any) => i.description === 'Scaling').doctorId, second.id);
+  await request(`${path}/bills`, 'POST', bill, reception.cookie);
+  detail = await request(path, 'GET', undefined, reception.cookie);
+  assert.equal(detail.data.invoices.length, 4, 'Retry must not create duplicate bills');
+  for (const invoice of detail.data.invoices) {
+    const payment = await request('/clinic/payments', 'POST', { invoiceId: invoice.id, amountPaise: invoice.totalPaise, method: 'CASH', idempotencyKey: randomUUID() }, reception.cookie);
+    assert.equal(payment.status, 201, JSON.stringify(payment.data));
+  }
+  assert.equal((await db.appointment.findUniqueOrThrow({ where: { id: appointment.id } })).paymentStatus, 'PAID');
+  const commissions = await db.commission.findMany({ where: { tenantId: clinic.tenantId } });
+  assert.equal(commissions.length, 2, 'Only procedure payments earn doctor commissions');
+  assert.equal(commissions.reduce((n, c) => n + c.amountPaise, 0), 60000);
+  // Closing the clinical visit after reception billed must not repeat its visit fee.
+  const closed = await request(`/clinic/dental-visits/${appointment.id}`, 'PUT', { complaint: 'Review', diagnosis: 'Reviewed', finalize: true }, clinic.cookie);
+  assert.equal(closed.status, 200, JSON.stringify(closed.data));
+  detail = await request(path, 'GET', undefined, reception.cookie);
+  assert.equal(detail.data.invoices.length, 4);
+  assert.equal(detail.data.appointment.paymentStatus, 'PAID');
+});
+
 test('ordinary clinic reads do not acquire or modify the clinic write lock', async () => {
   const clinic = await register('Concurrent reads clinic');
   assert.equal((await request('/clinic/patients', 'POST', { name: 'Initial patient', phone: '9000023455' }, clinic.cookie)).status, 201);

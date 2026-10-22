@@ -1,4 +1,5 @@
 import { registerDentalRoutes } from './dental.js';
+import { registerReceptionRoutes } from './reception.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -391,6 +392,7 @@ async function prepareMasterData(resource: string, data: any, store: any, old?: 
   }
 }
 registerDentalRoutes(clinicApi, run, validateSlot);
+registerReceptionRoutes(clinicApi, run);
 // A bounded calendar range returns every matching visit, without the generic 500-row limit.
 clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res: any, { store, tenant }: any) => {
   const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -758,9 +760,9 @@ clinicApi.post(
       paidPaise: paid,
       status: paid === invoice.totalPaise ? 'PAID' : 'PARTIAL',
     });
-    if (invoice.sessionId) {
-      const s = await store.get('treatmentSession', invoice.sessionId);
-      const doctor = await tx.doctor.findFirst({ where: { id: s.doctorId, tenantId: tenant.id } });
+    if (invoice.sessionId || (invoice.doctorId && invoice.chargeKind === 'PROCEDURE')) {
+      const doctorId = invoice.sessionId ? (await store.get('treatmentSession', invoice.sessionId)).doctorId : invoice.doctorId;
+      const doctor = await tx.doctor.findFirst({ where: { id: doctorId, tenantId: tenant.id } });
       assert(doctor, 404, 'Treating doctor not found.');
       if (doctor.commissionPercent)
         await tx.commission.create({ data: { tenantId: tenant.id,

@@ -18,6 +18,60 @@ test.beforeEach(async () => {
   }
 });
 
+test('receptionist sees today, marks attendance and bills procedures for multiple doctors', async ({ page }) => {
+  const headers = { Origin: 'http://localhost:5173' }, password = 'Reception-Browser-Password-123';
+  const plans = await (await page.request.get('/api/public/plans')).json();
+  const email = `reception-owner-${randomUUID()}@example.test`;
+  const signup = await page.request.post('/api/auth/register', { headers, data: { clinicName: 'Reception browser clinic', name: 'Owner', email, password, phone: '9876543210', planId: plans.find((p: any) => p.name === 'Enterprise').id, acceptTerms: true } });
+  expect(signup.status()).toBe(201);
+  await page.request.post('/api/auth/login', { headers, data: { email, password } });
+  async function create(resource: string, data: any) { const r = await page.request.post(`/api/clinic/${resource}`, { headers, data }); expect(r.status()).toBe(201); return r.json(); }
+  const branch = await create('branches', { name: 'Reception branch' });
+  const first = await create('doctors', { name: 'Dr Reception One', branchId: branch.id });
+  const second = await create('doctors', { name: 'Dr Reception Two', branchId: branch.id });
+  const patient = await create('patients', { name: 'Reception billing patient', phone: '9000011223', branchId: branch.id });
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const appointment = await create('appointments', { patientId: patient.id, doctorId: first.id, branchId: branch.id, startsAt: `${date}T09:00:00+05:30`, feeType: 'clinic' });
+  const receptionist = `reception-browser-${randomUUID()}@example.test`;
+  await create('staff', { name: 'Reception staff', email: receptionist, password, role: 'RECEPTIONIST', branchId: branch.id });
+  await page.request.post('/api/auth/logout', { headers, data: {} });
+  await page.request.post('/api/auth/login', { headers, data: { email: receptionist, password } });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/clinic/dashboard');
+  await expect(page.getByRole('heading', { name: 'Receptionist panel', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: "Today's patients", exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Absent', exact: true }).click();
+  await expect(page.locator('.reception-patient .attendance-pill')).toHaveText('Absent');
+  await page.getByRole('button', { name: 'Present', exact: true }).click();
+  await expect(page.locator('.reception-patient .attendance-pill')).toHaveText('Present');
+  await page.getByRole('button', { name: `Billing for ${patient.name}` }).click();
+  await page.getByRole('button', { name: 'Add procedure', exact: true }).click();
+  await page.getByLabel('Procedure 1', { exact: true }).fill('Restoration');
+  await page.getByLabel('Charge 1', { exact: true }).fill('1000');
+  await page.getByLabel('Lab charge 1', { exact: true }).fill('200');
+  await page.getByRole('button', { name: 'Add procedure', exact: true }).click();
+  await page.getByLabel('Procedure 2', { exact: true }).fill('Scaling');
+  await page.getByLabel('Doctor 2', { exact: true }).selectOption(second.id);
+  await page.getByLabel('Charge 2', { exact: true }).fill('500');
+  await page.screenshot({ path: '.tools/screenshots/reception-billing-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Save bill', exact: true }).click();
+  await expect(page.locator('.reception-billing .dental-total')).toContainText('2,000');
+  await expect(page.getByRole('button', { name: 'Record payment', exact: true })).toHaveCount(4);
+  await page.getByRole('button', { name: 'Record payment', exact: true }).first().click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Record payment', exact: true })).toHaveCount(3);
+  await page.reload();
+  await expect(page.locator('.reception-patient .attendance-pill')).toHaveText('Present');
+  await expect(page.locator('.reception-billing .dental-total')).toContainText('2,000');
+  const saved = await (await page.request.get(`/api/clinic/reception/${appointment.id}`)).json();
+  expect(saved.invoices.find((i: any) => i.description === 'Scaling').doctorId).toBe(second.id);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Add procedure', exact: true }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: '.tools/screenshots/reception-billing-mobile.png', fullPage: true });
+});
+
 test('marketing pages work on desktop and mobile without horizontal overflow', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));

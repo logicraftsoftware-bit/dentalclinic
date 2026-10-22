@@ -3504,6 +3504,58 @@ td .text-button {
 .appointment-fee-option:has(input:checked) { border-color: #287c6e; background: #eaf5ef; }
 .appointment-fees strong { display: block; margin-top: 8px; font-size: 22px; }
 .appointment-clinic-fee { margin: 20px 0; }
+
+.reception-layout { display: grid; grid-template-columns: 275px minmax(0, 1fr); gap: 24px; align-items: start; }
+.reception-calendar { padding: 20px; }
+.reception-month, .reception-section-heading, .reception-bill-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.reception-month { margin-bottom: 16px; }
+.reception-mini-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; margin-bottom: 20px; }
+.reception-mini-calendar > span { font-size: 11px; color: #72857d; padding: 6px 0; }
+.reception-mini-calendar button { position: relative; padding: 8px 0; background: transparent; color: #25483d; border-radius: 8px; min-width: 0; }
+.reception-mini-calendar button.selected { background: #287c6e; color: white; }
+.reception-mini-calendar button.outside { opacity: .45; }
+.reception-mini-calendar i { position: absolute; bottom: 3px; left: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: #d6a958; }
+.reception-calendar > button { width: 100%; justify-content: center; margin-bottom: 18px; }
+.reception-calendar label { display: block; font-size: 12px; }
+.reception-stats { display: grid; gap: 12px; border-top: 1px solid #e2eae5; padding-top: 18px; margin-top: 18px; }
+.reception-stats span { display: flex; justify-content: space-between; font-size: 13px; }
+.reception-workspace { min-width: 0; display: grid; gap: 24px; }
+.reception-patients, .reception-billing { padding: 24px; min-width: 0; }
+.reception-section-heading h2, .reception-section-heading h3, .reception-bill-header h2 { margin: 0 0 6px; }
+.reception-section-heading p, .reception-bill-header p { margin: 0; color: #6a8076; font-size: 13px; }
+.reception-section-heading > span { color: #6a8076; font-size: 12px; white-space: nowrap; }
+.reception-filters { display: flex; gap: 12px; margin: 20px 0; }
+.reception-filters input { flex: 1; min-width: 0; }
+.reception-filters select { width: auto; }
+.reception-patient { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 18px 10px; border-top: 1px solid #e2eae5; }
+.reception-patient.selected { background: #f0f8f3; }
+.reception-patient time { font-size: 12px; color: #287c6e; }
+.reception-patient-name { flex: 1; min-width: 160px; }
+.reception-patient-name strong, .reception-patient-name small { display: block; }
+.reception-patient-name small { margin-top: 5px; color: #6a8076; font-size: 11px; }
+.reception-patient-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.reception-bill-header { padding-bottom: 22px; border-bottom: 1px solid #e2eae5; margin-bottom: 22px; }
+.reception-procedures { border: 0; padding: 0; min-width: 0; margin: 0; }
+.reception-procedure-table { margin-top: 20px; min-width: 720px; }
+.reception-procedure-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.reception-procedure-table th small { display: block; margin-top: 4px; }
+.reception-procedure-table td { vertical-align: top; padding: 14px 8px; }
+.reception-procedure-table input, .reception-procedure-table select { margin: 0; padding: 10px; font-size: 12px; }
+.reception-procedure-table td:nth-child(2) { min-width: 190px; }
+.reception-procedure-table td:nth-child(2) input { margin-top: 8px; }
+.reception-procedure-table td:nth-child(3) { min-width: 180px; }
+.reception-procedure-table input[type=number] { width: 85px; }
+.reception-lab { background: #fcf5e9; color: #78511a; }
+.reception-draft-total { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #e2eae5; padding-top: 18px; margin-top: 20px; }
+.reception-procedures > .muted { font-size: 12px; line-height: 1.6; margin: 16px 0; }
+.reception-empty { padding: 24px 0; color: #6a8076; }
+.reception-billing > .dental-section { box-shadow: none; padding: 24px 0 0; margin: 24px 0 0; border: 0; border-top: 1px solid #e2eae5; }
+.reception-billing > .dental-section table { min-width: 620px; }
+.reception-billing > .dental-section td:not(:first-child) { white-space: nowrap; }
+.reception-saved-charges { margin-top: 24px; font-size: 13px; }
+.reception-saved-charges summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 1150px) { .reception-layout { grid-template-columns: 230px minmax(0, 1fr); gap: 16px; }.reception-patients, .reception-billing { padding: 18px; } }
+@media (max-width: 800px) { .reception-layout { grid-template-columns: 1fr; }.reception-calendar { max-width: 100%; }.reception-mini-calendar { max-width: 360px; margin-left: auto; margin-right: auto; }.reception-stats { grid-template-columns: repeat(3, 1fr); }.reception-stats span { display: grid; gap: 8px; }.reception-filters { flex-wrap: wrap; }.reception-section-heading { align-items: start; flex-wrap: wrap; } }
 .appointment-selection { padding: 12px 0; color: #287c6e; }
 .appointment-actions { display: flex; justify-content: flex-end; gap: 12px; }
 .appointment-error { color: #ad3333; padding: 12px; background: #fff1f1; border-radius: 8px; }

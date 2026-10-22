@@ -23,7 +23,7 @@ function VisitHistory({ history, doctors = [], items = [], plans = [] }: any) {
     {plans.filter((p: any) => !(history || []).some((v: any) => v.planId === p.id)).map((plan: any) => <details key={plan.id} className="dental-history"><summary>{plan.title} - {plan.status}</summary>{items.filter((i: any) => i.planId === plan.id).map((i: any) => <p key={i.id}>Tooth {i.tooth}: {i.name} - {money(i.pricePaise)} / Lab {money(i.labChargePaise)} - {i.status}</p>)}</details>)}
   </section>;
 }
-function VisitBilling({ invoices = [], modal, action }: any) {
+export function VisitBilling({ invoices = [], modal, action, emptyMessage = 'Invoices appear when the doctor closes the visit.' }: any) {
   const total = invoices.reduce((s: number, i: any) => s + i.totalPaise, 0), paid = invoices.reduce((s: number, i: any) => s + i.paidPaise, 0);
   function pay(invoice: any) {
     const key = crypto.randomUUID();
@@ -34,7 +34,7 @@ function VisitBilling({ invoices = [], modal, action }: any) {
     ], submit: (data: any) => action(() => api('/clinic/payments', 'POST', { ...data, invoiceId: invoice.id, idempotencyKey: key }), 'Payment recorded') });
   }
   return <section className="panel dental-section"><h2>Reception billing</h2><p>Treatment, laboratory and visit fees are billed separately.</p><div className="dental-total"><span>Total {money(total)}</span><span>Paid {money(paid)}</span><strong>Balance {money(total - paid)}</strong></div>
-    {!invoices.length ? <p>Invoices appear when the doctor closes the visit.</p> : <div className="table-wrap"><table><thead><tr><th>Description</th><th>Total</th><th>Paid</th><th>Balance</th><th>Payment</th></tr></thead><tbody>{invoices.map((i: any) => <tr key={i.id}><td>{i.description}</td><td>{money(i.totalPaise)}</td><td>{money(i.paidPaise)}</td><td>{money(i.totalPaise-i.paidPaise)}</td><td>{i.paidPaise < i.totalPaise ? <button className="secondary small" onClick={() => pay(i)}>Record payment</button> : 'Paid'}</td></tr>)}</tbody></table></div>}
+    {!invoices.length ? <p>{emptyMessage}</p> : <div className="table-wrap"><table><thead><tr><th>Description</th><th>Total</th><th>Paid</th><th>Balance</th><th>Payment</th></tr></thead><tbody>{invoices.map((i: any) => <tr key={i.id}><td>{i.description}</td><td>{money(i.totalPaise)}</td><td>{money(i.paidPaise)}</td><td>{money(i.totalPaise-i.paidPaise)}</td><td>{i.paidPaise < i.totalPaise ? <button className="secondary small" onClick={() => pay(i)}>Record payment</button> : 'Paid'}</td></tr>)}</tbody></table></div>}
   </section>;
 }
 

@@ -4,6 +4,7 @@ export const clinicPages: Record<string, string> = {
   dashboard: 'Overview',
   patients: 'Patients',
   appointments: 'Appointments',
+  reception: 'Reception',
   referrals: 'Internal referrals',
   treatments: 'Treatments',
   billing: 'Billing & payments',
