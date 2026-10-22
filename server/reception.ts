@@ -157,4 +157,66 @@ export function registerReceptionRoutes(router: Router, run: any) {
     await store.create('idempotencyRecord', { key, fingerprint, status: 201, body: JSON.parse(JSON.stringify(result)), headers: {} });
     res.status(201).json(result);
   }, false, false, 120000));
+
+  router.post('/reception/:id/line-checkout', run('billing', async (req: any, res: any, ctx: any, actor: any) => {
+    const { store, tx, tenant } = ctx;
+    const appointment = await store.get('appointment', id.parse(req.params.id));
+    assert(!['ABSENT', 'CANCELLED'].includes(appointment.status), 409, 'Mark this patient present before billing.');
+    const input = z.object({
+      checkoutKey: z.string().uuid(),
+      lines: z.array(z.object({ key: z.string().uuid(), name: z.string().trim().min(1).max(200), doctorId: id, chargePaise: money, labChargePaise: money }).strict().refine(v => v.chargePaise + v.labChargePaise > 0, 'Enter a procedure or lab charge.')).max(50),
+      settlements: z.array(z.object({
+        invoiceIds: z.array(id).min(1).max(100).optional(), lineKey: z.string().uuid().optional(), feeIndex: z.number().int().min(0).max(2).optional(),
+        discountPaise: money, amountPaise: money, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default(''),
+      }).strict().refine(v => Number(!!v.invoiceIds) + Number(!!v.lineKey) + Number(v.feeIndex !== undefined) === 1, 'Select exactly one procedure.')).max(500),
+    }).strict().parse(req.body);
+    assert(new Set(input.lines.map(l => l.key)).size === input.lines.length, 400, 'Duplicate procedure key.');
+    const key = `reception-line-checkout:${actor.userId}:${appointment.id}:${input.checkoutKey}`, fingerprint = hash(JSON.stringify(input));
+    const previous = (await store.list('idempotencyRecord', { key }))[0];
+    if (previous) { assert(previous.fingerprint === fingerprint, 409, 'This checkout was already saved with different details.'); res.json(previous.body); return; }
+    let invoices = await createCheckoutCharges(ctx, appointment, input);
+    const used = new Set<string>();
+    const plans = input.settlements.map(s => {
+      let selected: any[];
+      if (s.invoiceIds) selected = invoices.filter((i: any) => s.invoiceIds!.includes(i.id));
+      else if (s.lineKey) {
+        const index = input.lines.findIndex(l => l.key === s.lineKey);
+        assert(index >= 0, 400, 'Procedure not found in this checkout.');
+        const prefix = `reception:${appointment.id}:${input.checkoutKey}:${index}:`;
+        selected = invoices.filter((i: any) => i.sourceKey.startsWith(prefix));
+      } else selected = invoices.filter((i: any) => i.sourceKey === `${appointment.id}:fee:${s.feeIndex}`);
+      assert(selected.length > 0 && (!s.invoiceIds || selected.length === s.invoiceIds.length), 404, 'Procedure not found in this appointment.');
+      for (const i of selected) { assert(!used.has(i.id), 400, 'A procedure can only be collected once per checkout.'); used.add(i.id); }
+      const balance = selected.reduce((n, i) => n + i.totalPaise - i.paidPaise, 0);
+      assert(s.discountPaise <= balance, 400, 'Procedure discount exceeds its unpaid balance.');
+      assert(s.amountPaise <= balance - s.discountPaise, 400, 'Collect amount exceeds this procedure balance.');
+      return { ...s, selected, balance };
+    });
+    const updates = new Map<string, any>();
+    const audits: any[] = [];
+    for (const plan of plans) {
+      let remainingDiscount = plan.discountPaise, remainingBalance = plan.balance;
+      for (const i of plan.selected) {
+        const due = i.totalPaise - i.paidPaise;
+        if (!due) continue;
+        const share = Number(BigInt(remainingDiscount) * BigInt(due) / BigInt(remainingBalance));
+        remainingDiscount -= share; remainingBalance -= due;
+        if (!share) continue;
+        const change = { totalPaise: i.totalPaise - share, discountPaise: (i.discountPaise || 0) + share, discountReason: 'Procedure discount', status: i.totalPaise - share === i.paidPaise ? 'PAID' : i.paidPaise ? 'PARTIAL' : 'UNPAID' };
+        await tx.invoice.update({ where: { tenantId_id: { tenantId: tenant.id, id: i.id } }, data: change });
+        Object.assign(i, change);
+        audits.push({ tenantId: tenant.id, actorId: actor.userId, action: 'invoice.discount.applied', recordId: i.id });
+      }
+      const changed = await recordCheckoutPayment(ctx, plan.selected, { amountPaise: plan.amountPaise, method: plan.method, reference: plan.reference }, input.checkoutKey, actor);
+      for (const i of changed) updates.set(i.id, i);
+    }
+    if (audits.length) await tx.clinicAudit.createMany({ data: audits });
+    invoices = invoices.map((i: any) => updates.get(i.id) || i);
+    const total = invoices.reduce((n: number, i: any) => n + i.totalPaise, 0), paid = invoices.reduce((n: number, i: any) => n + i.paidPaise, 0);
+    await tx.appointment.update({ where: { tenantId_id: { tenantId: tenant.id, id: appointment.id } }, data: { paymentStatus: paid >= total ? 'PAID' : paid ? 'PARTIAL' : 'PENDING' } });
+    const result = { invoices, totalPaise: total, paidPaise: paid, balancePaise: total - paid };
+    await store.audit(actor.userId, 'reception.procedure-checkout.saved', appointment.id);
+    await store.create('idempotencyRecord', { key, fingerprint, status: 201, body: JSON.parse(JSON.stringify(result)), headers: {} });
+    res.status(201).json(result);
+  }, false, false, 120000));
 }

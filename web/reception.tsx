@@ -1,122 +1,12 @@
-import { BillReceipt } from './bill-receipt';
+import { BillingDesk } from './procedure-billing';
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react';
-import { api, money } from './api';
+import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { api } from './api';
 import { calendarDays, nextDay, shiftMonth } from './calendar-utils';
 
 
 const statuses: Record<string, string> = { SCHEDULED: 'Awaiting', CHECKED_IN: 'Present', ABSENT: 'Absent', COMPLETED: 'Completed', CANCELLED: 'Cancelled' };
 const dateLabel = (date: string) => new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
-type Line = { key: string; name: string; doctorId: string; charge: string; lab: string };
-
-function BillingDesk({ appointmentId, action, tick, close, zone, workspace }: any) {
-  const [data, setData] = useState<any>(null);
-  const [lines, setLines] = useState<Line[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [billKey, setBillKey] = useState(() => crypto.randomUUID());
-  const [discountType, setDiscountType] = useState('AMOUNT');
-  const [discount, setDiscount] = useState('');
-  const [discountReason, setDiscountReason] = useState('');
-  const [paidAmount, setPaidAmount] = useState('');
-  const [method, setMethod] = useState('CASH');
-  const [reference, setReference] = useState('');
-  useEffect(() => {
-    let active = true;
-    api(`/clinic/reception/${appointmentId}`).then(value => { if (active) { setData(value); setError(''); } }).catch(e => { if (active) setError(e.message); });
-    return () => { active = false; };
-  }, [appointmentId, tick]);
-  const addLine = () => setLines(old => [...old, { key: crypto.randomUUID(), name: '', doctorId: data.appointment.doctorId, charge: '', lab: '' }]);
-  function edit(key: string, values: Partial<Line>) { setLines(old => old.map(line => line.key === key ? { ...line, ...values } : line)); }
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true); setError('');
-    try {
-      await action(() => api(`/clinic/reception/${appointmentId}/checkout`, 'POST', {
-        checkoutKey: billKey, discount: { type: discountType, value: discountType === 'PERCENT' ? Number(discount || 0) : Math.round(Number(discount || 0) * 100), reason: discountReason },
-        payment: { amountPaise: Math.round(Number(paidAmount || 0) * 100), method, reference }, lines: lines.map(line => ({ name: line.name.trim(), doctorId: line.doctorId, chargePaise: Math.round(Number(line.charge) * 100), labChargePaise: Math.round(Number(line.lab) * 100) })),
-      }), 'Patient bill saved', { reportError: false });
-      setLines([]); setBillKey(crypto.randomUUID()); setDiscount(''); setDiscountReason(''); setPaidAmount(''); setReference('');
-      setData(await api(`/clinic/reception/${appointmentId}`));
-    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
-  }
-  if (!data) return <section className="panel reception-billing"><button className="secondary" onClick={close}>Back to patients</button>{error ? <p role="alert">{error}</p> : <p role="status">Loading billing desk...</p>}</section>;
-  const appointment = data.appointment;
-  const blocked = ['ABSENT', 'CANCELLED'].includes(appointment.status);
-  const draftTotal = lines.reduce((n, line) => n + Math.round(Number(line.charge || 0) * 100) + Math.round(Number(line.lab || 0) * 100), 0);
-  const unbilledVisitFee = [
-    ['Consultant fee', appointment.consultationPaise], ['Visiting consultant fee', appointment.visitingConsultationPaise], ['Clinic fee', appointment.clinicFeePaise],
-  ].reduce((sum: number, [description, amount]) => sum + (data.invoices.some((i: any) => i.description === description) ? 0 : Number(amount || 0)), 0);
-  const savedNet = data.invoices.reduce((n: number, i: any) => n + i.totalPaise, 0);
-  const savedDiscount = data.invoices.reduce((n: number, i: any) => n + (i.discountPaise || 0), 0);
-  const savedPaid = data.invoices.reduce((n: number, i: any) => n + i.paidPaise, 0);
-  const newCharges = draftTotal + unbilledVisitFee;
-  const outstanding = savedNet + newCharges - savedPaid;
-  const discountPaise = discountType === 'PERCENT' ? Math.round(outstanding * Number(discount || 0) / 100) : Math.round(Number(discount || 0) * 100);
-  const paymentPaise = Math.round(Number(paidAmount || 0) * 100);
-  const netPayable = savedNet + newCharges - discountPaise;
-  const dueNow = netPayable - savedPaid;
-  const invalid = discountPaise > outstanding || discountPaise < 0 || paymentPaise > dueNow || paymentPaise < 0;
-  const doctorNames = new Map(data.doctors.map((d: any) => [d.id, d.name]));
-  return <section className="panel reception-billing" aria-label={`Billing desk for ${data.patient.name}`}>
-    <header className="reception-bill-header"><div><p className="calendar-eyebrow">BILLING DESK · STAFF VIEW</p><h2>{data.patient.name}</h2><p>{data.patient.phone} · {new Intl.DateTimeFormat('en-IN', { timeZone: zone, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(appointment.startsAt))}</p></div><button className="secondary icon-button" aria-label="Close billing desk" disabled={busy} onClick={close}><X size={18} /></button></header>
-    {error && <p className="error-banner" role="alert">{error}</p>}
-    <form onSubmit={save}>
-      <fieldset disabled={busy || blocked} className="reception-procedures">
-        <div className="reception-section-heading"><div><h3>Procedures on this bill</h3><p>Add treatment charges and assign the treating doctor.</p></div><span>{lines.length} procedures · {new Set(lines.map(line => line.doctorId)).size} doctors</span></div>
-        <div className="table-wrap"><table className="reception-procedure-table"><thead><tr><th>#</th><th>Procedure</th><th>Doctor</th><th>Charge (₹)</th><th className="reception-lab">Lab charge (₹)<small>Staff only</small></th><th aria-label="Remove procedure"></th></tr></thead><tbody>
-          {lines.map((line, index) => <tr key={line.key}><td>{index + 1}</td><td>
-            <select aria-label={`Charge master ${index + 1}`} value="" onChange={e => { const charge = data.charges.find((c: any) => c.id === e.target.value); if (charge) edit(line.key, { name: charge.name, charge: String(charge.pricePaise / 100), lab: String((charge.labChargePaise || 0) / 100) }); }}><option value="">Choose from charge master</option>{data.charges.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            <input required maxLength={200} aria-label={`Procedure ${index + 1}`} placeholder="Treatment / procedure name" value={line.name} onChange={e => edit(line.key, { name: e.target.value })} />
-          </td><td><select required aria-label={`Doctor ${index + 1}`} value={line.doctorId} onChange={e => edit(line.key, { doctorId: e.target.value })}><option value="">Select doctor</option>{data.doctors.map((d: any) => <option key={d.id} value={d.id}>{d.name} · {d.specialty}</option>)}</select></td>
-            <td><input required type="number" min="0" max="10000000" step="0.01" aria-label={`Charge ${index + 1}`} value={line.charge} onChange={e => edit(line.key, { charge: e.target.value })} /></td>
-            <td className="reception-lab"><input type="number" min="0" max="10000000" step="0.01" aria-label={`Lab charge ${index + 1}`} value={line.lab} onChange={e => edit(line.key, { lab: e.target.value })} /></td>
-            <td><button type="button" className="text-button" aria-label={`Remove procedure ${index + 1}`} onClick={() => setLines(old => old.filter(row => row.key !== line.key))}><Trash2 size={17} /></button></td></tr>)}
-        </tbody></table></div>
-        {!lines.length && <p className="reception-empty">Add a procedure, or create the bill with just the selected appointment fee.</p>}
-        <button type="button" className="secondary" disabled={lines.length >= 50} onClick={addLine}><Plus size={16} />Add procedure</button>
-        <div className="reception-checkout-grid">
-          <section className="reception-checkout-fields" aria-label="Discount and payment">
-            <h3>Discount & payment</h3>
-            <div className="reception-payment-fields">
-              <label>Discount type<select aria-label="Discount type" value={discountType} onChange={e => setDiscountType(e.target.value)}><option value="AMOUNT">Amount (₹)</option><option value="PERCENT">Percentage (%)</option></select></label>
-              <label>{discountType === 'PERCENT' ? 'Discount (%)' : 'Discount amount (₹)'}<input type="number" min="0" max={discountType === 'PERCENT' ? 100 : outstanding / 100} step="0.01" value={discount} onChange={e => setDiscount(e.target.value)} placeholder="0" /></label>
-              <label className="reception-field-wide">Discount reason<input maxLength={200} value={discountReason} onChange={e => setDiscountReason(e.target.value)} placeholder="Optional reason" /></label>
-              <label>Payment method<select aria-label="Payment method" value={method} onChange={e => setMethod(e.target.value)}><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="CARD">Card</option><option value="BANK">Bank transfer</option></select></label>
-              <label>Paid amount (₹)<input type="number" min="0" max={Math.max(0, dueNow) / 100} step="0.01" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} placeholder="0" /></label>
-              <label className="reception-field-wide">Payment reference<input maxLength={200} value={reference} onChange={e => setReference(e.target.value)} placeholder="UPI / card / bank reference (optional)" /></label>
-            </div>
-            <button type="button" className="secondary" disabled={dueNow <= 0} onClick={() => setPaidAmount(String(dueNow / 100))}>Pay full balance</button>
-            <p className="muted">Discount applies to unpaid charges only. Enter zero paid amount to save a bill for later payment.</p>
-          </section>
-          <section className="reception-bill-summary" aria-label="Bill summary">
-            <h3>Bill summary</h3>
-            <div><span>Subtotal</span><strong>{money(savedNet + savedDiscount + newCharges)}</strong></div>
-            <div><span>Saved discount</span><strong>{money(savedDiscount)}</strong></div>
-            <div><span>Additional discount</span><strong>−{money(discountPaise)}</strong></div>
-            <div className="reception-summary-total"><span>Net payable</span><strong>{money(netPayable)}</strong></div>
-            <div><span>Already paid</span><strong>{money(savedPaid)}</strong></div>
-            <div><span>Receiving now</span><strong>{money(paymentPaise)}</strong></div>
-            <div className="reception-summary-balance"><span>Balance due</span><strong>{money(dueNow - paymentPaise)}</strong></div>
-            {invalid && <p role="alert">Discount and payment must not exceed the unpaid balance.</p>}
-            <button className="primary" disabled={invalid || (!lines.length && !unbilledVisitFee && !discountPaise && !paymentPaise)}>{busy ? 'Saving...' : 'Save bill & payment'}</button>
-          </section>
-        </div>
-      </fieldset>
-    </form>
-    {blocked && <p role="status">This patient is {statuses[appointment.status].toLowerCase()}. Mark the patient present to create a bill.</p>}
-    <section className="reception-saved-bill">
-      <div className="reception-section-heading"><h3>Saved bill</h3><button className="secondary" disabled={!data.invoices.length} onClick={() => window.print()}>Print saved bill</button></div>
-      <div className="dental-total"><span>Total {money(savedNet)}</span><span>Paid {money(savedPaid)}</span><strong>Balance {money(savedNet - savedPaid)}</strong></div>
-      {!data.invoices.length ? <p>No saved charges yet.</p> : <div className="table-wrap"><table><thead><tr><th>Treatment / charge</th><th>Doctor</th><th>Gross</th><th>Discount</th><th>Net</th><th>Paid</th><th>Balance</th></tr></thead><tbody>{data.invoices.map((i: any) => <tr key={i.id}><td>{i.description}</td><td>{String(doctorNames.get(i.doctorId || (i.sessionId ? appointment.doctorId : '')) || '—')}</td><td>{money(i.totalPaise + (i.discountPaise || 0))}</td><td>{money(i.discountPaise || 0)}{i.discountReason && <small>{i.discountReason}</small>}</td><td>{money(i.totalPaise)}</td><td>{money(i.paidPaise)}</td><td>{money(i.totalPaise - i.paidPaise)}</td></tr>)}</tbody></table></div>}
-      <h3>Payment history</h3>
-      {!data.payments?.length ? <p>No payments recorded.</p> : <div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date & time</th><th>Method</th><th>Reference</th><th>Received</th></tr></thead><tbody>{data.payments.map((p: any) => <tr key={p.id}><td>{p.id.slice(0, 8)}</td><td>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.createdAt))}</td><td>{p.method}</td><td>{p.reference || '—'}</td><td>{money(p.amountPaise)}</td></tr>)}</tbody></table></div>}
-    </section>
-    <BillReceipt data={data} workspace={workspace} zone={zone} />
-  </section>;
-}
-
 export function Reception({ go, workspace, tick, action, route }: any) {
   const zone = workspace?.tenant?.settings?.timezone || 'Asia/Kolkata';
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());

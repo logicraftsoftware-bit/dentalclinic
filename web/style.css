@@ -3580,6 +3580,33 @@ td .text-button {
 .reception-saved-bill td:not(:first-child) { white-space: nowrap; }
 .reception-saved-bill td small { white-space: normal; max-width: 160px; }
 .reception-receipt { display: none; }
+.procedure-billing .reception-bill-header { padding-bottom: 12px; margin-bottom: 12px; }
+.procedure-billing .reception-bill-header h2 { font-size: 20px; }
+.procedure-toolbar { display: flex; align-items: center; gap: 8px; }
+.procedure-billing .reception-section-heading { margin-bottom: 10px; }
+.procedure-billing .reception-section-heading p { font-size: 12px; }
+.procedure-entry-table { min-width: 1030px; table-layout: fixed; margin: 10px 0; }
+.procedure-entry-table th { padding: 8px 6px; font-size: 10px; text-transform: none; letter-spacing: 0; }
+.procedure-entry-table th:first-child { width: 28px; }
+.procedure-entry-table th:nth-child(2) { width: 240px; }
+.procedure-entry-table th:nth-child(3) { width: 100px; }
+.procedure-entry-table th:nth-child(8) { width: 120px; }
+.procedure-entry-table th:last-child { width: 30px; }
+.procedure-entry-table td { padding: 8px 6px; vertical-align: top; font-size: 12px; }
+.procedure-entry-table input, .procedure-entry-table select { min-width: 0; width: 100%; min-height: 30px; margin: 0 0 4px; padding: 5px 6px; font-size: 12px; }
+.procedure-entry-table strong, .procedure-entry-table small { display: block; }
+.procedure-entry-table small { color: #6a8076; font-size: 10px; line-height: 1.4; margin-top: 3px; }
+.procedure-entry-table .text-button { padding: 0; font-size: 10px; }
+.procedure-new { background: #f7fbf8; }
+.procedure-error { color: #b42318; }
+.procedure-totals { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 14px; margin-top: 12px; background: #edf7f1; border-radius: 8px; }
+.procedure-totals > span { font-size: 11px; color: #536d61; }
+.procedure-totals strong { display: block; font-size: 16px; color: #183e39; margin-top: 3px; }
+.procedure-totals button { margin-left: auto; }
+.procedure-history { margin-top: 16px; font-size: 12px; }
+.procedure-history summary { cursor: pointer; font-weight: 600; }
+.procedure-history table { min-width: 600px; }
+@media(max-width: 600px) { .procedure-toolbar { flex-wrap: wrap; justify-content: end; }.procedure-billing .reception-bill-header { align-items: start; }.procedure-totals > span { min-width: 26%; }.procedure-totals button { width: 100%; justify-content: center; } }
 @media(max-width: 800px) { .reception-checkout-grid { grid-template-columns: 1fr; }.reception-full-page .reception-billing { padding: 16px; }.reception-payment-fields { grid-template-columns: 1fr; }.reception-field-wide { grid-column: auto; } }
 @media print {
   .reception-full-page > :not(.reception-billing), .reception-full-page .reception-billing > :not(.reception-receipt) { display: none !important; }
@@ -3616,7 +3643,7 @@ td .text-button {
   .reception-receipt .receipt-summary { width: 63%; border: .25mm solid #dae1e5; border-radius: 2mm; padding: 3mm; background: #f7f9fa; margin: 3mm 0; break-inside: avoid; }
   .reception-receipt h3 { color: #075844; font-size: 13pt; line-height: 1.25; margin-bottom: 2mm; }
   .reception-receipt .receipt-summary dl { display: grid; grid-template-columns: 1fr auto; align-items: stretch; }
-  .reception-receipt .receipt-summary dt, .reception-receipt .receipt-summary dd { padding: 1.2mm 2mm; }
+  .reception-receipt .receipt-summary dt, .reception-receipt .receipt-summary dd { padding: 1mm 2mm; }
   .reception-receipt .receipt-summary dd { text-align: right; font-weight: 700; white-space: nowrap; }
   .reception-receipt .receipt-summary .receipt-highlight { background: #dff3e9; color: #034c3c; font-weight: 700; font-size: 10.5pt; margin: .7mm 0; }
   .reception-receipt .receipt-summary .receipt-outstanding { color: #c92920; }
@@ -3637,6 +3664,20 @@ td .text-button {
   .reception-receipt thead { display: table-header-group; }
   .reception-receipt tr { break-inside: avoid; }
   .reception-receipt table tr:last-child td { border-bottom: .25mm solid #cdd5da; }
+  .reception-receipt .receipt-procedure-table { font-size: 7pt; }
+  .reception-receipt .receipt-procedure-table th { font-size: 7pt; }
+  .reception-receipt .receipt-procedure-table th, .reception-receipt .receipt-procedure-table td { padding: 1.4mm 1mm; }
+  .reception-receipt .receipt-procedure-table th:first-child { width: 4%; }
+  .reception-receipt .receipt-procedure-table th:nth-child(2) { width: 25%; }
+  .reception-receipt .receipt-procedure-table th:nth-child(n+3) { width: auto; }
+  .reception-receipt .receipt-procedure-table td:nth-child(7) { text-align: left; }
+  .reception-receipt .receipt-procedure-table small { display: block; font-size: 6.5pt; color: #52616b; margin-top: .5mm; }
+  .reception-receipt .receipt-procedure-history th:nth-child(2) { width: 13%; }
+  .reception-receipt .receipt-procedure-history th:nth-child(3) { width: 22%; }
+  .reception-receipt .receipt-procedure-history th:nth-child(4) { width: 23%; }
+  .reception-receipt .receipt-procedure-history th:nth-child(5) { width: 10%; }
+  .reception-receipt .receipt-procedure-history th:nth-child(6) { width: 13%; }
+  .reception-receipt .receipt-procedure-history td { font-size: 7pt; padding: 1.2mm 2mm; }
 }
 @page reception-bill { size: A4; margin: 12mm; }
 @media (max-width: 1150px) { .reception-layout { grid-template-columns: 230px minmax(0, 1fr); gap: 16px; }.reception-patients, .reception-billing { padding: 18px; } }

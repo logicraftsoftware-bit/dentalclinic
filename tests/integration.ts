@@ -1560,6 +1560,53 @@ test('reception checkout atomically discounts bills, records partial payments an
 
 });
 
+test('procedure checkout keeps discounts and collection methods on the selected procedure only', async () => {
+  const clinic = await register('Procedure collection clinic');
+  async function create(resource: string, body: any) { const r = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie); assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data; }
+  const doctor = await create('doctors', { name: 'Procedure dentist' });
+  const patient = await create('patients', { name: 'Procedure patient', phone: '9000093344' });
+  const appointment = await create('appointments', { patientId: patient.id, doctorId: doctor.id, feeType: 'clinic', startsAt: new Date(Date.now() + 86400000).toISOString() });
+  const path = `/clinic/reception/${appointment.id}`, firstKey = randomUUID(), secondKey = randomUUID();
+  const body = { checkoutKey: randomUUID(), lines: [
+    { key: firstKey, name: 'Crown', doctorId: doctor.id, chargePaise: 100000, labChargePaise: 20000 },
+    { key: secondKey, name: 'Scaling', doctorId: doctor.id, chargePaise: 50000, labChargePaise: 0 },
+  ], settlements: [
+    { lineKey: firstKey, discountPaise: 10000, amountPaise: 40000, method: 'UPI', reference: 'CROWN-UPI' },
+    { lineKey: secondKey, discountPaise: 5000, amountPaise: 20000, method: 'CARD', reference: 'SCALING-CARD' },
+    { feeIndex: 2, discountPaise: 0, amountPaise: 30000, method: 'CASH' },
+  ] };
+  assert.equal((await request(`${path}/line-checkout`, 'POST', body, b.cookie)).status, 404);
+  const first = await request(`${path}/line-checkout`, 'POST', body, clinic.cookie);
+  assert.equal(first.status, 201, JSON.stringify(first.data));
+  assert.equal(first.data.totalPaise, 185000); assert.equal(first.data.paidPaise, 90000); assert.equal(first.data.balancePaise, 95000);
+  const detail = (await request(path, 'GET', undefined, clinic.cookie)).data;
+  const crown = detail.invoices.filter((i: any) => i.sourceKey.includes(`:${body.checkoutKey}:0:`));
+  const scaling = detail.invoices.find((i: any) => i.description === 'Scaling');
+  assert.equal(crown.reduce((n: number, i: any) => n + i.discountPaise, 0), 10000);
+  assert.equal(crown.reduce((n: number, i: any) => n + i.paidPaise, 0), 40000);
+  assert.equal(scaling.discountPaise, 5000); assert.equal(scaling.paidPaise, 20000);
+  assert.ok(detail.payments.filter((p: any) => crown.some((i: any) => i.id === p.invoiceId)).every((p: any) => p.method === 'UPI' && p.reference === 'CROWN-UPI'));
+  assert.equal(detail.payments.find((p: any) => p.invoiceId === scaling.id).method, 'CARD');
+  const foreignTarget = { ...body, checkoutKey: randomUUID(), settlements: [{ invoiceIds: [invoiceA.id], discountPaise: 0, amountPaise: 1, method: 'CASH' }] };
+  assert.equal((await request(`${path}/line-checkout`, 'POST', foreignTarget, clinic.cookie)).status, 404);
+  assert.equal((await request(path, 'GET', undefined, clinic.cookie)).data.invoices.length, detail.invoices.length, 'Invalid procedure target must roll back new charges');
+  await request(`${path}/line-checkout`, 'POST', body, clinic.cookie);
+  assert.equal((await request(path, 'GET', undefined, clinic.cookie)).data.payments.length, detail.payments.length);
+  const overpay = { checkoutKey: randomUUID(), lines: [], settlements: [{ invoiceIds: [scaling.id], discountPaise: 0, amountPaise: 30000, method: 'BANK' }] };
+  assert.equal((await request(`${path}/line-checkout`, 'POST', overpay, clinic.cookie)).status, 400, 'Another procedure balance must not cover this overpayment');
+  const overlap = { ...overpay, settlements: [{ invoiceIds: [scaling.id], discountPaise: 0, amountPaise: 1000, method: 'BANK' }, { invoiceIds: [scaling.id], discountPaise: 0, amountPaise: 1000, method: 'CASH' }] };
+  assert.equal((await request(`${path}/line-checkout`, 'POST', overlap, clinic.cookie)).status, 400);
+  const final = { checkoutKey: randomUUID(), lines: [], settlements: [
+    { invoiceIds: crown.map((i: any) => i.id), discountPaise: 0, amountPaise: 70000, method: 'BANK' },
+    { invoiceIds: [scaling.id], discountPaise: 0, amountPaise: 25000, method: 'CASH' },
+  ] };
+  const settled = await request(`${path}/line-checkout`, 'POST', final, clinic.cookie);
+  assert.equal(settled.status, 201, JSON.stringify(settled.data)); assert.equal(settled.data.balancePaise, 0);
+  const after = (await request(path, 'GET', undefined, clinic.cookie)).data;
+  assert.equal(after.appointment.paymentStatus, 'PAID');
+  assert.equal(after.invoices.find((i: any) => i.id === scaling.id).discountPaise, 5000);
+});
+
 test('ordinary clinic reads do not acquire or modify the clinic write lock', async () => {
   const clinic = await register('Concurrent reads clinic');
   assert.equal((await request('/clinic/patients', 'POST', { name: 'Initial patient', phone: '9000023455' }, clinic.cookie)).status, 201);

@@ -1,3 +1,4 @@
+import { billingLines, procedureCollections } from './billing-lines';
 import React from 'react';
 import { FileText, Mail, MapPin, Phone } from 'lucide-react';
 
@@ -7,6 +8,8 @@ export function BillReceipt({ data, workspace, zone }: any) {
   const clinic = workspace?.tenant || {};
   const settings = clinic.settings || {};
   const { patient, appointment, invoices, payments = [], doctors = [] } = data;
+  const procedureRows = billingLines(invoices, payments);
+  const collections = procedureCollections(procedureRows, payments);
   const net = invoices.reduce((n: number, i: any) => n + i.totalPaise, 0);
   const discount = invoices.reduce((n: number, i: any) => n + (i.discountPaise || 0), 0);
   const paid = invoices.reduce((n: number, i: any) => n + i.paidPaise, 0);
@@ -45,9 +48,9 @@ export function BillReceipt({ data, workspace, zone }: any) {
       <dl><dt>Patient Name</dt><dd><strong>{patient.name}</strong></dd><dt>Patient ID</dt><dd>{patient.id.slice(0, 8).toUpperCase()}</dd><dt>Phone No</dt><dd>{patient.phone || '—'}</dd><dt>Age / Gender</dt><dd>{age} / {patient.gender === 'Unspecified' ? '—' : patient.gender || '—'}</dd></dl>
       <dl><dt>Doctor</dt><dd>{doctorNames}</dd><dt>Visit Type</dt><dd>{appointment.reason || 'Consultation'}</dd><dt>Clinic</dt><dd>{clinic.name || 'Dental clinic'}</dd><dt>Address</dt><dd>{settings.address || '—'}</dd></dl>
     </div>
-    <table className="receipt-charge-table"><thead><tr><th>#</th><th>Description</th><th>Gross Amount (₹)</th><th>Discount (₹)</th><th>Net Amount (₹)</th></tr></thead><tbody>{invoices.map((i: any, index: number) => <tr key={i.id}><td>{index + 1}</td><td>{i.description}</td><td>{amount(i.totalPaise + (i.discountPaise || 0))}</td><td>{amount(i.discountPaise || 0)}</td><td>{amount(i.totalPaise)}</td></tr>)}</tbody></table>
+    <table className="receipt-charge-table receipt-procedure-table"><thead><tr><th>#</th><th>Procedure / Doctor</th><th>Gross (₹)</th><th>Discount (₹)</th><th>Net (₹)</th><th>Collected (₹)<small>Last payment</small></th><th>Method</th><th>Paid (₹)</th><th>Balance (₹)</th></tr></thead><tbody>{procedureRows.map((r: any, index: number) => <tr key={r.key}><td>{index + 1}</td><td>{r.name}<small>{doctors.find((d: any) => d.id === r.doctorId)?.name || ''}</small>{r.lab > 0 && <small>Includes lab: ₹{amount(r.lab)}</small>}</td><td>{amount(r.gross)}</td><td>{amount(r.discount)}</td><td>{amount(r.net)}</td><td>{amount(r.collected)}</td><td>{r.methods}</td><td>{amount(r.paid)}</td><td>{amount(r.net - r.paid)}</td></tr>)}</tbody></table>
     <section className="receipt-summary"><h3>Summary</h3><dl><dt>Subtotal (Gross Amount)</dt><dd>₹{amount(net + discount)}</dd><dt>Total Discount</dt><dd>₹{amount(discount)}</dd><dt className="receipt-highlight">Net Payable</dt><dd className="receipt-highlight">₹{amount(net)}</dd><dt>Total Paid</dt><dd>₹{amount(paid)}</dd><dt className="receipt-highlight">Outstanding Balance</dt><dd className={`receipt-highlight ${net > paid ? 'receipt-outstanding' : ''}`}>₹{amount(net - paid)}</dd></dl></section>
-    <section className="receipt-payment-history"><h3>Payment History</h3><table><thead><tr><th>#</th><th>Receipt No</th><th>Date & Time</th><th>Method</th><th>Reference</th><th>Amount (₹)</th></tr></thead><tbody>{payments.map((p: any, index: number) => <tr key={p.id}><td>{index + 1}</td><td>{p.id.slice(0, 8)}</td><td>{date(p.createdAt, true)}</td><td>{p.method}</td><td>{p.reference || '—'}</td><td>{amount(p.amountPaise)}</td></tr>)}{!payments.length && <tr><td colSpan={6}>No payments recorded.</td></tr>}</tbody></table></section>
+    <section className="receipt-payment-history receipt-procedure-history"><h3>Payment History</h3><table><thead><tr><th>#</th><th>Collection No</th><th>Procedure</th><th>Date & Time</th><th>Method</th><th>Reference</th><th>Amount (₹)</th></tr></thead><tbody>{collections.map((p: any, index: number) => <tr key={p.id}><td>{index + 1}</td><td>{p.collectionNo}</td><td>{p.name}</td><td>{date(p.createdAt, true)}</td><td>{p.method}</td><td>{p.reference || '—'}</td><td>{amount(p.amountPaise)}</td></tr>)}{!collections.length && <tr><td colSpan={7}>No payments recorded.</td></tr>}</tbody></table></section>
     <aside className="receipt-note"><FileText /><div><strong>Note:</strong><ol><li>This is a computer generated bill and does not require a signature.</li><li>{settings.invoiceFooter || 'Thank you for trusting us with your smile.'}</li></ol></div></aside>
     <footer className="receipt-footer"><div><strong>{clinic.name || 'Dental clinic'}</strong><p>{settings.tagline || 'Your Oral Health, Our Priority'}</p></div>{settings.website && <span>{settings.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span>}</footer>
   </section>;
