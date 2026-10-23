@@ -1,4 +1,5 @@
 import { recordInvoicePayment } from './patient-payments.js';
+import { accountsReport } from './accounts-report.js';
 import { registerDentalRoutes } from './dental.js';
 import { registerReceptionRoutes } from './reception.js';
 import { Router } from 'express';
@@ -1005,6 +1006,13 @@ clinicApi.get(
     true,
   ),
 );
+clinicApi.get('/accounts', run('reports', async (req: any, res: any, { store, tenant }: any) => {
+  const dayFilter = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
+  const filters = z.object({ from: dayFilter, to: dayFilter, doctorId: z.string().optional(), procedure: z.string().optional() }).parse(req.query);
+  assert(!filters.from || !filters.to || filters.from <= filters.to, 400, 'Start date must be before end date.');
+  const [invoices, payments, commissions, sessions, doctors, patients] = await Promise.all(['invoice', 'payment', 'commission', 'treatmentSession', 'doctor', 'patient'].map(model => store.list(model)));
+  res.json(accountsReport({ invoices, payments, commissions, sessions, doctors, patients }, filters, tenant.settings?.timezone || 'Asia/Kolkata'));
+}));
 clinicApi.get(
   '/reports',
   run('reports', async (_req: any, res: any, { store, tenant }: any) => {

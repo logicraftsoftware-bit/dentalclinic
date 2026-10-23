@@ -8,6 +8,7 @@ export const clinicPages: Record<string, string> = {
   referrals: 'Internal referrals',
   treatments: 'Treatments',
   billing: 'Billing & payments',
+  accounts: 'Accounts',
   doctors: 'Doctors',
   team: 'Team & branches',
   masters: 'Masters',

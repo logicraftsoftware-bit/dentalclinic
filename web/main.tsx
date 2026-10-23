@@ -4,6 +4,7 @@ import { Reception } from './reception';
 import { AppointmentCreate } from './appointment-create';
 import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
 import { ClinicMasters } from './masters';
+import { Accounts } from './accounts';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -75,6 +76,7 @@ const clinicNav = [
   ['referrals', 'Internal referrals', ArrowRight],
   ['treatments', 'Treatments', HeartPulse],
   ['billing', 'Billing & payments', Wallet],
+  ['accounts', 'Accounts', CreditCard],
   ['doctors', 'Doctors', Stethoscope],
   ['team', 'Team & branches', Building2],
   ['masters', 'Masters', ClipboardList],
@@ -88,6 +90,7 @@ const screenCaps: Record<string, string> = {
   referrals: 'appointments',
   treatments: 'clinical',
   billing: 'billing',
+  accounts: 'reports',
   doctors: 'doctors',
   team: 'staff',
   masters: 'catalog',
@@ -553,6 +556,8 @@ function App() {
                 <Team {...common} />
               ) : screen === 'masters' ? (
                 <ClinicMasters {...common} />
+              ) : screen === 'accounts' ? (
+                <Accounts {...common} />
               ) : screen === 'reports' ? (
                 <Reports {...common} />
               ) : screen === 'settings' ? (
