@@ -3645,6 +3645,75 @@ td .text-button {
 .accounts-empty h3 { color: #23483f; margin: 12px 0 8px; }
 @media(max-width: 1000px) { .accounts-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media(max-width: 600px) { .accounts-title { align-items: start; flex-direction: column; }.accounts-metrics { gap: 10px; }.accounts-metric { padding: 16px; }.accounts-metric > strong { font-size: 22px; }.accounts-tabs button { padding: 10px; font-size: 12px; } }
+.accounts-page { gap: 18px; color: #121c36; }
+.accounts-page .panel { border: 1px solid #e5edf4; border-radius: 16px; box-shadow: 0 4px 18px #244d7910; }
+.accounts-title-copy { display: flex; gap: 16px; align-items: center; min-width: 0; }
+.accounts-title-icon { display: grid; place-items: center; width: 50px; height: 50px; flex-shrink: 0; color: #fff; border-radius: 12px; background: linear-gradient(135deg, #00b98b, #008764); box-shadow: 0 5px 14px #009b7230; }
+.accounts-page h1, .accounts-page h2 { color: #10182e; }
+.accounts-page h2 { font-size: 18px; letter-spacing: -.5px; }
+.accounts-title p, .accounts-report-heading p { color: #536b8b; }
+.accounts-filters { padding: 18px; gap: 16px; }
+.accounts-filters label { color: #314b6c; }
+.accounts-page .primary, .accounts-tabs button.active { background: linear-gradient(135deg, #00a77f, #008c68); color: white; box-shadow: 0 3px 9px #009b721a; }
+.accounts-filters button { min-width: 88px; border-radius: 9px; }
+.accounts-filters input, .accounts-filters select { border-color: #dce5ef; color: #17233f; border-radius: 9px; }
+.accounts-metric { display: flex; gap: 16px; padding: 22px 18px; min-height: 154px; --account-accent: #009b72; --account-tint: #d5f3e8; background: linear-gradient(120deg, #f0fbf6, #fafffd); }
+.accounts-metric-commission { --account-accent: #258bff; --account-tint: #d9edff; background: linear-gradient(120deg, #f1f9ff, #fbfdff); }
+.accounts-metric-clinic { --account-accent: #f88a15; --account-tint: #ffead2; background: linear-gradient(120deg, #fff8ef, #fffdf9); }
+.accounts-metric-dueCommission { --account-accent: #8952f9; --account-tint: #eae0ff; background: linear-gradient(120deg, #f7f3ff, #fdfbff); }
+.accounts-metric-icon { display: grid; place-items: center; flex: 0 0 52px; height: 56px; border-radius: 13px; color: var(--account-accent); background: var(--account-tint); }
+.accounts-metric > div { min-width: 0; }
+.accounts-metric > div > span { font-size: 12px; font-weight: 600; color: #3d5575; }
+.accounts-metric strong { display: block; margin: 8px 0 5px; font-size: 30px; letter-spacing: -.8px; color: #111a32; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.accounts-metric small { display: block; color: #536b8b; font-size: 12px; }
+.accounts-charts { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; min-width: 0; }
+.accounts-chart-panel { min-width: 0; padding: 22px; }
+.accounts-chart-panel h2 { display: flex; align-items: center; gap: 12px; }
+.accounts-chart-legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; margin: 20px 0 30px; color: #536b8b; font-size: 11px; }
+.accounts-chart-legend > span, .accounts-distribution-legend > div > span { display: inline-flex; align-items: center; gap: 7px; }
+.accounts-dot { display: inline-block; flex-shrink: 0; width: 11px; height: 11px; border-radius: 50%; }
+.accounts-color-collected, .accounts-color-clinic.accounts-dot { background: #009b72; }
+.accounts-color-commission { background: #258bff; }
+.accounts-color-clinic { background: #ff9018; }
+.accounts-color-dueCommission { background: #8952f9; }
+.accounts-bars-scroll { overflow-x: auto; padding-top: 26px; }
+.accounts-bars { display: flex; gap: 32px; background: repeating-linear-gradient(to top, transparent 0, transparent 35px, #edf1f7 35px, #edf1f7 36px); }
+.accounts-bar-group { flex: 1; min-width: 150px; text-align: center; }
+.accounts-bar-columns { height: 118px; display: flex; align-items: end; justify-content: center; gap: 12px; border-bottom: 1px solid #e5edf4; }
+.accounts-bar-track { display: flex; align-items: end; width: 30%; max-width: 85px; height: 100%; }
+.accounts-bar { width: 100%; min-height: 2px; position: relative; border-radius: 6px 6px 0 0; }
+.accounts-bar > span { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700; white-space: nowrap; color: #314b6c; }
+.accounts-bar-label { display: block; padding: 12px 4px 0; background: #fff; font-size: 11px; color: #536b8b; }
+.accounts-distribution { display: flex; align-items: center; gap: 24px; padding-top: 26px; }
+.accounts-donut { width: 160px; height: 160px; flex-shrink: 0; border-radius: 50%; padding: 24px; }
+.accounts-donut > div { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 100%; height: 100%; background: white; border-radius: 50%; }
+.accounts-donut strong { font-size: 20px; max-width: 100%; overflow-wrap: anywhere; text-align: center; }
+.accounts-donut span { font-size: 10px; color: #536b8b; }
+.accounts-distribution-legend { flex: 1; min-width: 0; }
+.accounts-distribution-legend > div { display: flex; align-items: center; gap: 10px; margin: 14px 0; font-size: 12px; flex-wrap: wrap; }
+.accounts-distribution-legend > div > span { flex: 1; color: #536b8b; }
+.accounts-distribution-legend small { color: #536b8b; min-width: 30px; text-align: right; }
+.accounts-distribution-legend p, .accounts-chart-empty { color: #637b93; font-size: 11px; line-height: 1.5; }
+.accounts-chart-empty { padding: 40px 0; text-align: center; }
+.accounts-report-heading { margin-bottom: 16px; }
+.accounts-tabs { gap: 8px; border-color: #e5edf4; }
+.accounts-tabs button { display: inline-flex; align-items: center; gap: 10px; color: #536b8b; }
+.accounts-note { padding: 12px 0; color: #637b93; font-size: 11px; }
+.accounts-note summary { cursor: pointer; }
+.accounts-note p { margin-top: 8px; }
+.accounts-table { min-width: 1250px; font-size: 12px; }
+.accounts-table th { background: #f3f7f8; font-size: 10px; text-transform: uppercase; letter-spacing: .25px; white-space: nowrap; }
+.accounts-table td { color: #17233f; padding-top: 16px; padding-bottom: 16px; }
+.accounts-table th:nth-last-child(6), .accounts-table td:nth-last-child(6) { background: #eefaf4; color: #00855f; }
+.accounts-table th:nth-last-child(5), .accounts-table td:nth-last-child(5) { background: #f0f8ff; color: #1681ed; }
+.accounts-table th:nth-last-child(4), .accounts-table td:nth-last-child(4) { background: #f8f3ff; color: #8050d8; }
+.accounts-table th:nth-last-child(3), .accounts-table td:nth-last-child(3) { background: #fff6ed; color: #be6812; }
+.accounts-table tfoot td { font-weight: 700; }
+.accounts-report { padding: 20px 18px 10px; }
+.accounts-chart-legend .accounts-color-clinic { background: #ff9018; }
+.accounts-page .accounts-metric-icon svg { color: var(--account-accent); }
+@media(max-width: 1200px) { .accounts-charts { grid-template-columns: 1fr; }.accounts-metric { gap: 10px; }.accounts-metric-icon { flex-basis: 42px; height: 46px; }.accounts-metric strong { font-size: 25px; } }
+@media(max-width: 600px) { .accounts-title-copy { gap: 10px; }.accounts-title h1 { font-size: 24px; }.accounts-title p { font-size: 12px; }.accounts-metric { flex-direction: column; padding: 16px; }.accounts-metric-icon { flex: auto; width: 42px; }.accounts-metric strong { font-size: 23px; }.accounts-distribution { flex-direction: column; align-items: center; }.accounts-distribution-legend { width: 100%; }.accounts-report-heading { flex-wrap: wrap; }.accounts-chart-panel { padding: 18px; }.accounts-page h2 { font-size: 16px; } }
 .procedure-history { margin-top: 16px; font-size: 12px; }
 .procedure-history summary { cursor: pointer; font-weight: 600; }
 .procedure-history table { min-width: 600px; }
