@@ -3599,14 +3599,25 @@ td .text-button {
 .procedure-entry-table .text-button { padding: 0; font-size: 10px; }
 .procedure-new { background: #f7fbf8; }
 .procedure-error { color: #b42318; }
-.procedure-totals { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 14px; margin-top: 12px; background: #edf7f1; border-radius: 8px; }
-.procedure-totals > span { font-size: 11px; color: #536d61; }
-.procedure-totals strong { display: block; font-size: 16px; color: #183e39; margin-top: 3px; }
-.procedure-totals button { margin-left: auto; }
+.procedure-totals { margin-top: 24px; border: 1px solid #dce9e3; border-radius: 14px; overflow: hidden; background: #fff; }
+.procedure-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 22px 0; }
+.procedure-summary-heading > span { color: #23483f; font-size: 13px; font-weight: 700; }
+.procedure-summary-heading small { color: #6a8076; font-size: 12px; }
+.procedure-summary-breakdown { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin: 0; padding: 18px 22px 22px; }
+.procedure-totals dt { color: #637b73; font-size: 12px; line-height: 1.5; }
+.procedure-totals dd { margin: 5px 0 0; color: #23483f; font-size: 20px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.procedure-summary-breakdown > div + div { border-left: 1px solid #e5ede9; padding-left: 22px; }
+.procedure-summary-net dd { font-weight: 800; }
+.procedure-summary-checkout { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 22px; border-top: 1px solid #dce9e3; background: #f0f7f3; }
+.procedure-summary-payment { display: flex; flex-wrap: wrap; gap: 20px 40px; margin: 0; }
+.procedure-summary-payment dd { color: #176c5a; font-size: 25px; font-weight: 800; }
+.procedure-summary-balance dd { color: #23483f; font-size: 20px; font-weight: 600; }
+.procedure-summary-checkout .primary { min-height: 46px; flex-shrink: 0; border-radius: 9px; padding: 12px 22px; }
+.procedure-summary-checkout .primary:disabled { cursor: default; }
 .procedure-history { margin-top: 16px; font-size: 12px; }
 .procedure-history summary { cursor: pointer; font-weight: 600; }
 .procedure-history table { min-width: 600px; }
-@media(max-width: 600px) { .procedure-toolbar { flex-wrap: wrap; justify-content: end; }.procedure-billing .reception-bill-header { align-items: start; }.procedure-totals > span { min-width: 26%; }.procedure-totals button { width: 100%; justify-content: center; } }
+@media(max-width: 600px) { .procedure-toolbar { flex-wrap: wrap; justify-content: end; }.procedure-billing .reception-bill-header { align-items: start; }.procedure-summary-heading { padding: 16px 16px 0; }.procedure-summary-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 18px 16px; }.procedure-summary-breakdown > div + div { border: 0; padding-left: 0; }.procedure-summary-checkout { align-items: stretch; flex-direction: column; gap: 20px; padding: 18px 16px; }.procedure-summary-payment { justify-content: space-between; gap: 16px; }.procedure-summary-payment > div { flex: 1; min-width: 0; }.procedure-totals button { width: 100%; justify-content: center; } }
 @media(max-width: 800px) { .reception-checkout-grid { grid-template-columns: 1fr; }.reception-full-page .reception-billing { padding: 16px; }.reception-payment-fields { grid-template-columns: 1fr; }.reception-field-wide { grid-column: auto; } }
 @media print {
   .reception-full-page > :not(.reception-billing), .reception-full-page .reception-billing > :not(.reception-receipt) { display: none !important; }

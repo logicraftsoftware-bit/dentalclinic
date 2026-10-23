@@ -61,7 +61,19 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
           <td><select aria-label={`Payment method ${index + 1}`} value={e.method} onChange={event => editEntry(r.key, { method: event.target.value })}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method}</option>)}</select><input maxLength={200} aria-label={`Payment reference ${index + 1}`} placeholder="Reference" value={e.reference} onChange={event => editEntry(r.key, { reference: event.target.value })} />{r.paid > 0 && <small>Paid by {r.methods}</small>}</td><td className={due - collect < 0 ? 'procedure-error' : ''}>{money(due - collect)}</td><td>{r.kind === 'draft' && <button type="button" className="text-button" aria-label={`Remove procedure ${index + 1}`} onClick={() => setDrafts(old => old.filter(d => d.key !== r.draft.key))}><Trash2 size={15} /></button>}</td></tr>;
       })}</tbody></table></div>
       {invalid && <p role="alert" className="error-banner">A procedure discount or collection exceeds that procedure’s unpaid balance.</p>}
-      <div className="procedure-totals" aria-label="Bill summary"><span>Gross<strong>{money(totals.gross)}</strong></span><span>Discount<strong>{money(totals.discount)}</strong></span><span>Net<strong>{money(totals.net)}</strong></span><span>Already paid<strong>{money(totals.paid)}</strong></span><span>Collecting<strong>{money(totals.collect)}</strong></span><span>Balance<strong>{money(totals.net - totals.paid - totals.collect)}</strong></span><button className="primary" disabled={invalid || !changed}>{busy ? 'Saving...' : 'Save procedure payments'}</button></div>
+      <div className="procedure-totals" aria-label="Bill summary">
+        <div className="procedure-summary-heading"><span>Bill summary</span><small>{rows.length} {rows.length === 1 ? 'procedure' : 'procedures'}</small></div>
+        <dl className="procedure-summary-breakdown">
+          <div><dt>Gross amount</dt><dd>{money(totals.gross)}</dd></div>
+          <div><dt>Discount</dt><dd>{money(totals.discount)}</dd></div>
+          <div className="procedure-summary-net"><dt>Net amount</dt><dd>{money(totals.net)}</dd></div>
+          <div><dt>Already paid</dt><dd>{money(totals.paid)}</dd></div>
+        </dl>
+        <div className="procedure-summary-checkout">
+          <dl className="procedure-summary-payment"><div><dt>Collecting now</dt><dd>{money(totals.collect)}</dd></div><div className="procedure-summary-balance"><dt>Remaining balance</dt><dd>{money(totals.net - totals.paid - totals.collect)}</dd></div></dl>
+          <button className="primary" disabled={invalid || !changed} aria-busy={busy}>{busy ? 'Saving...' : 'Save procedure payments'}</button>
+        </div>
+      </div>
     </fieldset></form>
     {blocked && <p>This appointment is {appointment.status.toLowerCase()}. Mark the patient present before billing.</p>}
     <details className="procedure-history"><summary>Payment history ({collections.length} collections)</summary><div className="table-wrap"><table><thead><tr><th>Procedure</th><th>Date</th><th>Method</th><th>Reference</th><th>Collected</th></tr></thead><tbody>{collections.map((p: any) => <tr key={p.id}><td>{p.name}</td><td>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.createdAt))}</td><td>{p.method}</td><td>{p.reference || '—'}</td><td>{money(p.amountPaise)}</td></tr>)}</tbody></table></div></details>
