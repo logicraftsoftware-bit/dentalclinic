@@ -3704,6 +3704,7 @@ td .text-button {
 .accounts-table { min-width: 1250px; font-size: 12px; }
 .accounts-table th { background: #f3f7f8; font-size: 10px; text-transform: uppercase; letter-spacing: .25px; white-space: nowrap; }
 .accounts-table td { color: #17233f; padding-top: 16px; padding-bottom: 16px; }
+.accounts-table td:nth-last-child(-n+9) { white-space: nowrap; overflow-wrap: normal; word-break: normal; min-width: 100px; }
 .accounts-table th:nth-last-child(6), .accounts-table td:nth-last-child(6) { background: #eefaf4; color: #00855f; }
 .accounts-table th:nth-last-child(5), .accounts-table td:nth-last-child(5) { background: #f0f8ff; color: #1681ed; }
 .accounts-table th:nth-last-child(4), .accounts-table td:nth-last-child(4) { background: #f8f3ff; color: #8050d8; }
