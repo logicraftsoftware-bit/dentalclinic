@@ -18,6 +18,43 @@ test.beforeEach(async () => {
   }
 });
 
+test('appointment fee checkboxes work independently and a clinic-only visit needs no doctor', async ({ page }) => {
+  const headers={Origin:'http://localhost:5173'},password='Checkbox-Fees-Browser-123',email=`fees-${randomUUID()}@example.test`;
+  const plans=await(await page.request.get('/api/public/plans')).json();
+  expect((await page.request.post('/api/auth/register',{headers,data:{clinicName:'Fee checkbox clinic',name:'Owner',email,password,phone:'9876543210',planId:plans.find((p:any)=>p.name==='Enterprise').id,acceptTerms:true}})).status()).toBe(201);
+  await page.request.post('/api/auth/login',{headers,data:{email,password}});
+  async function create(resource:string,data:any){const result=await page.request.post(`/api/clinic/${resource}`,{headers,data});expect(result.status()).toBe(201);return result.json();}
+  await create('patients',{name:'Checkbox Patient',phone:'9000098765'});
+  await create('doctors',{name:'Dr Checkbox',consultationPaise:45000,visitingConsultationPaise:90000});
+  await page.goto('/clinic/appointments/new');
+  const clinic=page.getByRole('checkbox',{name:/^Clinic fee/});
+  await expect(clinic).toBeVisible();await expect(clinic).not.toBeChecked();
+  await expect(page.getByRole('checkbox',{name:/^Consultant fee/})).toHaveCount(0);
+  await page.getByLabel('Search patient by name or phone number').fill('Checkbox');
+  await page.getByRole('button',{name:'Checkbox Patient 9000098765'}).click();
+  await clinic.check();
+  await page.getByLabel('Search doctor by name').fill('Checkbox');
+  await page.getByRole('button',{name:'Dr Checkbox',exact:false}).click();
+  const consultant=page.getByRole('checkbox',{name:/^Consultant fee/}),visiting=page.getByRole('checkbox',{name:/^Visiting consultant fee/});
+  await consultant.check();await visiting.check();await expect(clinic).toBeChecked();
+  const total=page.locator('.appointment-selection').filter({hasText:'Total fees:'});
+  await expect(total).toContainText('1,650');
+  await consultant.uncheck();await expect(total).toContainText('1,200');
+  await visiting.uncheck();await expect(total).toContainText('300');
+  await page.getByLabel('Search doctor by name').fill('');
+  await expect(consultant).toHaveCount(0);await expect(clinic).toBeChecked();
+  const date=new Date(Date.now()+86400000).toISOString().slice(0,10);
+  await page.getByLabel(/^Date/).fill(date);await page.getByLabel(/^Time/).fill('10:00');
+  const response=page.waitForResponse(r=>r.url().endsWith('/api/clinic/appointments')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Create appointment',exact:true}).click();
+  const result=await response;expect(result.status()).toBe(201);const saved=await result.json();
+  expect(saved.doctorId).toBeNull();expect(saved.clinicFeePaise).toBe(30000);expect(saved.consultationPaise).toBe(0);
+  await page.goto(`/clinic/appointments/${date}/unassigned`);
+  await expect(page.getByRole('heading',{name:'Unassigned appointments'})).toBeVisible();
+  await expect(page.locator('.roster-entry')).toContainText('Checkbox Patient');
+  await expect(page.getByRole('button',{name:'Open billing'})).toBeVisible();
+});
+
 test('receptionist sees today, marks attendance and bills procedures for multiple doctors', async ({ page }) => {
   const headers = { Origin: 'http://localhost:5173' }, password = 'Reception-Browser-Password-123';
   const plans = await (await page.request.get('/api/public/plans')).json();
@@ -297,13 +334,13 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByRole('button', { name: 'Dr. Aditi Sharma Endodontist' }).click();
   await expect(page.locator('.appointment-fees')).toContainText('Consultant fee');
   await expect(page.locator('.appointment-fees')).toContainText('Visiting consultant fee');
-  const clinicFee = page.getByRole('radio', { name: /^Clinic fee/ });
+  const clinicFee = page.getByRole('checkbox', { name: /^Clinic fee/ });
   await clinicFee.check();
   await expect(clinicFee).toBeChecked();
-  await expect(page.getByRole('radio', { name: /^Consultant fee/ })).not.toBeChecked();
-  await page.getByRole('radio', { name: /^Visiting consultant fee/ }).check();
-  await expect(clinicFee).not.toBeChecked();
-  await page.getByRole('radio', { name: /^Consultant fee/ }).check();
+  await expect(page.getByRole('checkbox', { name: /^Consultant fee/ })).not.toBeChecked();
+  await page.getByRole('checkbox', { name: /^Visiting consultant fee/ }).check();
+  await expect(clinicFee).toBeChecked();
+  await page.getByRole('checkbox', { name: /^Consultant fee/ }).check();
   const date = new Date();
   date.setDate(date.getDate() + 1);
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);

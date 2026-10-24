@@ -108,13 +108,15 @@ const schemas: Record<
     cap: 'appointments',
     schema: z.object({
       patientId: id,
-      doctorId: id,
+      doctorId: id.nullable().optional(),
       branchId: id.optional(),
       startsAt: iso,
       durationMinutes: z.number().int().min(5).max(480).default(30),
       reason: z.string().max(200).default('Consultation'),
       useClinicFee: z.boolean().default(false),
       feeType: z.enum(['consultant', 'visiting', 'clinic']).optional(),
+      chargeConsultantFee: z.boolean().optional(),
+      chargeVisitingFee: z.boolean().optional(),
       notes: string,
     }),
     refs: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
@@ -267,14 +269,14 @@ clinicApi.get(
         : [];
       const patientNames = new Map(appointmentPatients.map((p: any) => [p.id, p.name]));
       const missingDoctorIds = [...new Set(appointments.map((a: any) => a.doctorId))]
-        .filter(id => !doctors.some((d: any) => d.id === id));
+        .filter(id => id && !doctors.some((d: any) => d.id === id));
       const otherDoctors = missingDoctorIds.length
         ? await store.list('doctor', { id: { in: missingDoctorIds } }, { select: { id: true, name: true } })
         : [];
       const doctorNames = new Map([...doctors, ...otherDoctors].map((d: any) => [d.id, d.name]));
       const appts = appointments.map((a: any) => ({
         ...a, patientName: patientNames.get(a.patientId) || 'Patient',
-        doctorName: doctorNames.get(a.doctorId) || 'Doctor',
+        doctorName: doctorNames.get(a.doctorId) || 'Unassigned',
       }));
       res.json({
         tenant,
@@ -511,13 +513,19 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
       await prepareMasterData(resource, data, store);
       if (resource === 'appointments') {
         await validateSlot(store, data);
-        const doctor = await store.get('doctor', data.doctorId);
-        const feeType = data.feeType ?? (data.useClinicFee ? 'clinic' : 'consultant');
-        delete data.feeType;
-        data.useClinicFee = feeType === 'clinic';
-        data.consultationPaise = feeType === 'consultant' ? (doctor.consultationPaise ?? 30000) : 0;
-        data.visitingConsultationPaise = feeType === 'visiting' ? (doctor.visitingConsultationPaise ?? 100000) : 0;
-        data.clinicFeePaise = feeType === 'clinic' ? 30000 : 0;
+        const doctor = data.doctorId ? await store.get('doctor', data.doctorId) : null;
+        const explicit = data.chargeConsultantFee !== undefined || data.chargeVisitingFee !== undefined;
+        const legacy = data.feeType ?? (data.useClinicFee ? 'clinic' : doctor ? 'consultant' : undefined);
+        const consultant = explicit ? data.chargeConsultantFee === true : legacy === 'consultant';
+        const visiting = explicit ? data.chargeVisitingFee === true : legacy === 'visiting';
+        const clinic = explicit ? data.useClinicFee : legacy === 'clinic';
+        assert(doctor || (!consultant && !visiting), 400, 'Select a doctor to charge consultant or visiting consultant fees.');
+        delete data.feeType; delete data.chargeConsultantFee; delete data.chargeVisitingFee;
+        data.useClinicFee = clinic;
+        data.consultationPaise = consultant ? (doctor.consultationPaise ?? 30000) : 0;
+        data.visitingConsultationPaise = visiting ? (doctor.visitingConsultationPaise ?? 100000) : 0;
+        data.clinicFeePaise = clinic ? 30000 : 0;
+        if (Number(data.consultationPaise) + Number(data.visitingConsultationPaise) + Number(data.clinicFeePaise) === 0) data.paymentStatus = 'NOT_REQUIRED';
       }
       const row = await store.create(c.model, data);
       await store.audit(actor.userId, `${resource}.created`, row.id);
@@ -526,6 +534,10 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
   );
 }
 async function validateSlot(store: any, data: any, ignoreId?: string) {
+  if (!data.doctorId) {
+    if (data.branchId) assert((await store.get('branch', data.branchId)).active, 409, 'Branch is inactive.');
+    return;
+  }
   const doctor = await store.get('doctor', data.doctorId);
   assert(doctor.active, 409, 'Doctor is inactive.');
   if (data.branchId) {

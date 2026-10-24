@@ -1414,6 +1414,38 @@ test('branch admins delegate staff safely and branch/doctor panels isolate recor
   );
 });
 
+test('appointment fees are independently selectable and appointments can omit a doctor', async () => {
+  const clinic = await register('Independent appointment fees clinic');
+  const patient = (await request('/clinic/patients', 'POST', { name: 'Optional doctor patient', phone: '9000012345' }, clinic.cookie)).data;
+  const doctor = (await request('/clinic/doctors', 'POST', { name: 'Checkbox fee doctor', consultationPaise: 45000, visitingConsultationPaise: 90000 }, clinic.cookie)).data;
+  for(let flags=0;flags<8;flags++) {
+    const result=await request('/clinic/appointments','POST',{
+      patientId:patient.id,doctorId:doctor.id,startsAt:new Date(Date.now()+(flags+20)*86400000).toISOString(),
+      chargeConsultantFee:Boolean(flags&1),chargeVisitingFee:Boolean(flags&2),useClinicFee:Boolean(flags&4),
+    },clinic.cookie);
+    assert.equal(result.status,201,JSON.stringify(result.data));
+    assert.equal(result.data.consultationPaise,flags&1?45000:0);
+    assert.equal(result.data.visitingConsultationPaise,flags&2?90000:0);
+    assert.equal(result.data.clinicFeePaise,flags&4?30000:0);
+    const bill=await request(`/clinic/reception/${result.data.id}`,'GET',undefined,clinic.cookie);
+    assert.equal(bill.status,200,JSON.stringify(bill.data));
+  }
+  const startsAt=new Date(Date.now()+40*86400000).toISOString();
+  for(const useClinicFee of [true,false]) {
+    const result=await request('/clinic/appointments','POST',{patientId:patient.id,startsAt,useClinicFee,chargeConsultantFee:false,chargeVisitingFee:false},clinic.cookie);
+    assert.equal(result.status,201,JSON.stringify(result.data));assert.equal(result.data.doctorId,null);
+    assert.equal(result.data.clinicFeePaise,useClinicFee?30000:0);assert.equal(result.data.consultationPaise,0);
+    assert.equal(result.data.paymentStatus,useClinicFee?'PENDING':'NOT_REQUIRED');
+    const bill=await request(`/clinic/reception/${result.data.id}`,'GET',undefined,clinic.cookie);
+    assert.equal(bill.status,200,JSON.stringify(bill.data));
+    const day=startsAt.slice(0,10),to=new Date(Date.parse(day+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+    assert.equal((await request(`/clinic/appointment-calendar?from=${day}&to=${to}`,'GET',undefined,clinic.cookie)).status,200);
+    assert.equal((await request('/clinic/overview','GET',undefined,clinic.cookie)).status,200);
+    assert.equal((await request(`/clinic/dental-visits/${result.data.id}`,'GET',undefined,clinic.cookie)).status,200);
+  }
+  for(const field of ['chargeConsultantFee','chargeVisitingFee'])assert.equal((await request('/clinic/appointments','POST',{patientId:patient.id,startsAt,[field]:true},clinic.cookie)).status,400);
+});
+
 test('appointments charge only the selected fee and preserve notes', async () => {
   const clinic = await register('Appointment fees clinic');
   const patient = (await request('/clinic/patients', 'POST', { name: 'Fee patient', phone: '9000012345' }, clinic.cookie)).data;

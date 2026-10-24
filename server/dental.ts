@@ -73,11 +73,12 @@ export function registerDentalRoutes(router: Router, run: any, validateSlot: any
       store.list('internalReferral', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } }),
     ]);
     const items = plans.length ? await store.list('treatmentItem', { planId: { in: plans.map((p: any) => p.id) } }) : [];
-    const doctors = await tx.doctor.findMany({ where: { tenantId: tenant.id, id: { in: [...new Set([appointment.doctorId, ...history.map((v: any) => v.doctorId)])] } }, select: { id: true, name: true } });
+    const doctors = await tx.doctor.findMany({ where: { tenantId: tenant.id, id: { in: [...new Set([appointment.doctorId, ...history.map((v: any) => v.doctorId)].filter(Boolean))] } }, select: { id: true, name: true } });
     res.json({ doctors, appointment, patient, encounter: encounters[0] || null, history, plans, items, invoices, referrals });
   }));
   router.put('/dental-visits/:id', run('clinical', async (req: any, res: any, { store, tx, tenant, membership }: any, actor: any) => {
     const appointment = await store.get('appointment', id.parse(req.params.id));
+    assert(appointment.doctorId, 400, 'Assign a doctor before recording clinical treatment.');
     assert(membership.role !== 'DOCTOR' || membership.doctorId === appointment.doctorId, 403, 'Open your own appointment.');
     assert(!['CANCELLED', 'ABSENT'].includes(appointment.status), 409, 'This appointment cannot be treated in its current attendance status.');
     const data = dentalForm.parse(req.body);

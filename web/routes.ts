@@ -110,7 +110,7 @@ export function parsePageRoute(location: string): PageRoute {
     return { area, screen, tab: 'billing', appointmentId: tab, title: 'Billing desk' };
   if (area === 'clinic' && screen === 'referrals' && !detail)
     return { area, screen, title: 'Internal referrals' };
-  if (area === 'clinic' && screen === 'appointments' && /^\d{4}-\d{2}-\d{2}$/.test(detail || '') && !extra && (!tab || uuid.test(tab))) {
+  if (area === 'clinic' && screen === 'appointments' && /^\d{4}-\d{2}-\d{2}$/.test(detail || '') && !extra && (!tab || tab === 'unassigned' || uuid.test(tab))) {
     const parsed = new Date(detail + 'T12:00:00Z');
     if (Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === detail)
       return { area, screen, appointmentDate: detail, doctorId: tab, title: tab ? 'Daily patient list' : 'Appointment roster' };

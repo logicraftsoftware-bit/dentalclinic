@@ -242,7 +242,7 @@ model Appointment {
   id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String
-  doctorId String
+  doctorId String?
   branchId String?
   referralId String?
   startsAt DateTime
@@ -257,7 +257,7 @@ model Appointment {
   status String @default("SCHEDULED")
   createdAt DateTime @default(now())
   patient Patient @relation(fields: [patientId], references: [id])
-  doctor Doctor @relation(fields: [doctorId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
   branch Branch? @relation(fields: [branchId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId, startsAt])
