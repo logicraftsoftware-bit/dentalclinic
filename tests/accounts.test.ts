@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accountsReport } from '../server/accounts-report.js';
+import { accountDateRange, accountsReport } from '../server/accounts-report.js';
 
 const at = (day: string) => new Date(`${day}T12:00:00Z`);
 function fixture() {
@@ -34,4 +34,27 @@ test('date boundaries use clinic timezone', () => {
   const data = fixture(); data.payments[1].createdAt = new Date('2026-10-01T19:00:00Z');
   const report = accountsReport(data, { from: '2026-10-02', to: '2026-10-02', doctorId: 'd1' }, 'Asia/Kolkata');
   assert.equal(report.totals.collected, 2000);
+});
+
+test('payment method totals reconcile with filtered collections', () => {
+  for (const filters of [{}, { from: '2026-10-01', to: '2026-10-31' }, { doctorId: 'd1', procedure: 'Filling' }, { doctorId: 'missing' }]) {
+    const report = accountsReport(fixture(), filters, 'Asia/Kolkata');
+    assert.equal(report.paymentMethods.reduce((n, method) => n + method.amount, 0), report.totals.collected);
+  }
+  const report = accountsReport(fixture(), { from: '2026-10-01', doctorId: 'd1' }, 'Asia/Kolkata');
+  assert.deepEqual(report.paymentMethods, [{ method: 'UPI', amount: 2000 }, { method: 'CARD', amount: 0 }, { method: 'CASH', amount: 0 }]);
+  const data = fixture(); data.payments[0].method = 'BANK_TRANSFER';
+  assert.equal(accountsReport(data, {}, 'Asia/Kolkata').paymentMethods.find(m => m.method === 'BANK_TRANSFER')?.amount, 3000);
+});
+
+test('date presets use clinic days, inclusive seven days and clamped calendar months', () => {
+  const now = new Date('2026-10-23T20:00:00Z');
+  const range = (period: string) => accountDateRange(period, 'Asia/Kolkata', now);
+  assert.deepEqual(range('all'), {});
+  assert.deepEqual(range('today'), { from: '2026-10-24', to: '2026-10-24' });
+  assert.deepEqual(range('yesterday'), { from: '2026-10-23', to: '2026-10-23' });
+  assert.deepEqual(range('7days'), { from: '2026-10-18', to: '2026-10-24' });
+  for (const [period, from] of [['1month', '2026-09-24'], ['3months', '2026-07-24'], ['6months', '2026-04-24']]) assert.deepEqual(range(period), { from, to: '2026-10-24' });
+  assert.deepEqual(accountDateRange('1month', 'Asia/Kolkata', at('2026-03-31')), { from: '2026-02-28', to: '2026-03-31' });
+  assert.equal(accountsReport(fixture(), { period: 'all', from: '2099-01-01' }, 'Asia/Kolkata').totals.collected, 7000);
 });

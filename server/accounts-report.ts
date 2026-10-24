@@ -1,7 +1,24 @@
 import { dateKey } from './time.js';
 
 // Invoice activity and receipts use their own dates; balances remain current.
+export function accountDateRange(period: string = 'all', zone: string, now = new Date()) {
+  if (period === 'all' || period === 'custom') return {};
+  const to = dateKey(now, zone);
+  const [year, month, day] = to.split('-').map(Number);
+  if (period === 'today') return { from: to, to };
+  if (period === 'yesterday' || period === '7days') {
+    const from = new Date(Date.UTC(year, month - 1, day - (period === 'yesterday' ? 1 : 6))).toISOString().slice(0, 10);
+    return { from, to: period === 'yesterday' ? from : to };
+  }
+  const months = ({ '1month': 1, '3months': 3, '6months': 6 } as Record<string, number>)[period];
+  if (!months) return {};
+  const start = new Date(Date.UTC(year, month - 1 - months, 1));
+  const lastDay = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+  start.setUTCDate(Math.min(day, lastDay));
+  return { from: start.toISOString().slice(0, 10), to };
+}
 export function accountsReport(data: any, filters: any, zone: string) {
+  filters = { ...filters, ...(filters.period && filters.period !== 'custom' ? { from: '', to: '', ...accountDateRange(filters.period, zone) } : {}) };
   const within = (value: any) => { const day = dateKey(value, zone); return (!filters.from || day >= filters.from) && (!filters.to || day <= filters.to); };
   const sessions = new Map<string, any>(data.sessions.map((s: any) => [s.id, s]));
   const doctors = new Map<string, any>(data.doctors.map((d: any) => [d.id, d]));
@@ -25,5 +42,11 @@ export function accountsReport(data: any, filters: any, zone: string) {
   const keys = ['gross', 'discount', 'net', 'collected', 'commission', 'paidCommission', 'dueCommission', 'clinic', 'outstanding'] as const;
   const sum = (items: any[]) => Object.fromEntries(keys.map(key => [key, items.reduce((n, r) => n + r[key], 0)])) as Record<typeof keys[number], number>;
   const group = (key: string) => { const groups = new Map<string, any[]>(); for (const row of rows) { const value = row[key]; const items = groups.get(value) || []; items.push(row); groups.set(value, items); } return [...groups].map(([value, items]) => ({ label: key === 'doctorId' ? items[0].doctor : value, count: items.length, ...sum(items) })).sort((a, b) => b.collected - a.collected); };
-  return { totals: sum(rows), doctors: group('doctorId'), procedures: group('procedure'), rows: rows.sort((a: any, b: any) => b.date.localeCompare(a.date)), doctorOptions: data.doctors.map((d: any) => ({ id: d.id, name: d.name })), procedureOptions: [...new Set(data.invoices.map((i: any) => i.description))].sort() };
+  const methods = new Map<string, number>(['UPI', 'CARD', 'CASH'].map(method => [method, 0]));
+  for (const row of rows) for (const receipt of row.receipts) {
+    const method = receipt.method?.trim().toUpperCase() || 'OTHER';
+    methods.set(method, (methods.get(method) || 0) + receipt.amount);
+  }
+  const paymentMethods = [...methods].map(([method, amount]) => ({ method, amount }));
+  return { filters, paymentMethods, totals: sum(rows), doctors: group('doctorId'), procedures: group('procedure'), rows: rows.sort((a: any, b: any) => b.date.localeCompare(a.date)), doctorOptions: data.doctors.map((d: any) => ({ id: d.id, name: d.name })), procedureOptions: [...new Set(data.invoices.map((i: any) => i.description))].sort() };
 }

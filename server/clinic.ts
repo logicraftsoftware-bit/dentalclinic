@@ -1008,7 +1008,7 @@ clinicApi.get(
 );
 clinicApi.get('/accounts', run('reports', async (req: any, res: any, { store, tenant }: any) => {
   const dayFilter = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
-  const filters = z.object({ from: dayFilter, to: dayFilter, doctorId: z.string().optional(), procedure: z.string().optional() }).parse(req.query);
+  const filters = z.object({ from: dayFilter, to: dayFilter, period: z.enum(['all', 'today', 'yesterday', '7days', '1month', '3months', '6months', 'custom']).optional(), doctorId: z.string().optional(), procedure: z.string().optional() }).parse(req.query);
   assert(!filters.from || !filters.to || filters.from <= filters.to, 400, 'Start date must be before end date.');
   const [invoices, payments, commissions, sessions, doctors, patients] = await Promise.all(['invoice', 'payment', 'commission', 'treatmentSession', 'doctor', 'patient'].map(model => store.list(model)));
   res.json(accountsReport({ invoices, payments, commissions, sessions, doctors, patients }, filters, tenant.settings?.timezone || 'Asia/Kolkata'));
