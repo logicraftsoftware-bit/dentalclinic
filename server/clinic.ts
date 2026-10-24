@@ -1,3 +1,4 @@
+import { parsePartial } from './validation.js';
 import { recordInvoicePayment } from './patient-payments.js';
 import { accountsReport } from './accounts-report.js';
 import { registerDentalRoutes } from './dental.js';
@@ -54,7 +55,7 @@ const schemas: Record<
     model: OwnedModel;
     cap: string;
     limit?: string;
-    schema: z.AnyZodObject;
+    schema: z.ZodObject<any>;
     refs?: Record<string, OwnedModel>;
   }
 > = {
@@ -557,11 +558,7 @@ async function validateSlot(store: any, data: any, ignoreId?: string) {
 clinicApi.patch(
   '/patients/:id',
   run('patients', async (req: any, res: any, { store }: any, actor: any) => {
-    const data = schemas.patients.schema
-      .partial()
-      .extend({ archived: z.boolean().optional() })
-      .strict()
-      .parse(req.body);
+    const data = parsePartial(schemas.patients.schema.extend({ archived: z.boolean().optional() }), req.body);
     const row = await store.update('patient', id.parse(req.params.id), data);
     await store.audit(actor.userId, 'patient.updated', row.id);
     res.json(row);
@@ -602,11 +599,7 @@ for (const resource of [
       resource === 'doctors' ? 'doctors' : 'settings',
       async (req: any, res: any, { store, subscription }: any, actor: any) => {
         const c = schemas[resource];
-        const data = c.schema
-          .partial()
-          .extend({ active: z.boolean().optional() })
-          .strict()
-          .parse(req.body);
+        const data = parsePartial(c.schema.extend({ active: z.boolean().optional() }), req.body);
         const old = await store.get(c.model, id.parse(req.params.id));
         if (data.active && !old.active && c.limit)
           checkLimit(
