@@ -1,3 +1,4 @@
+import { patientAge } from '../shared/patient-age';
 import { billingLines, procedureCollections } from './billing-lines';
 import React from 'react';
 import { FileText, Mail, MapPin, Phone } from 'lucide-react';
@@ -22,12 +23,8 @@ export function BillReceipt({ data, workspace, zone }: any) {
   }).format(new Date(value));
   const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(billDate)).replaceAll('-', '');
   const visitDate = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(appointment.startsAt));
-  let age = '—';
-  if (patient.dob) {
-    const birth = new Date(patient.dob).toISOString().slice(0, 10);
-    const years = Number(visitDate.slice(0, 4)) - Number(birth.slice(0, 4)) - (visitDate.slice(5) < birth.slice(5) ? 1 : 0);
-    if (years >= 0) age = `${years} years`;
-  }
+  const years = patientAge(patient, visitDate);
+  const age = years === null ? '—' : `${years} years`;
   const doctorIds = new Set([appointment.doctorId, ...invoices.map((i: any) => i.doctorId).filter(Boolean)]);
   const doctorNames = doctors.filter((d: any) => doctorIds.has(d.id)).map((d: any) => d.name).join(', ') || '—';
   return <section className="reception-receipt" aria-label="Patient bill and payment receipt">
@@ -48,7 +45,7 @@ export function BillReceipt({ data, workspace, zone }: any) {
     </div>
     <div className="receipt-patient-info">
       <dl><dt>Patient Name</dt><dd><strong>{patient.name}</strong></dd><dt>Patient ID</dt><dd>{patient.id.slice(0, 8).toUpperCase()}</dd><dt>Phone No</dt><dd>{patient.phone || '—'}</dd><dt>Age / Gender</dt><dd>{age} / {patient.gender === 'Unspecified' ? '—' : patient.gender || '—'}</dd></dl>
-      <dl><dt>Doctor</dt><dd>{doctorNames}</dd><dt>Visit Type</dt><dd>{appointment.reason || 'Consultation'}</dd><dt>Clinic</dt><dd>{clinic.name || 'Dental clinic'}</dd><dt>Address</dt><dd>{settings.address || '—'}</dd></dl>
+      <dl><dt>Doctor</dt><dd>{doctorNames}</dd><dt>Visit Type</dt><dd>{appointment.reason || 'Consultation'}</dd><dt>Clinic</dt><dd>{clinic.name || 'Dental clinic'}</dd><dt>Patient Address</dt><dd>{patient.address || '—'}</dd></dl>
     </div>
     <table className="receipt-charge-table receipt-procedure-table"><thead><tr><th>#</th><th>Procedure / Doctor</th><th>Gross (₹)</th><th>Discount (₹)</th><th>Net (₹)</th><th>Collected (₹)<small>Last payment</small></th><th>Method</th><th>Paid (₹)</th><th>Balance (₹)</th></tr></thead><tbody>{procedureRows.map((r: any, index: number) => <tr key={r.key}><td>{index + 1}</td><td>{r.name}{r.invoices.every((i: any) => i.status === 'CANCELLED') && <small><strong>CANCELLED — original receipt retained; paid amount moved to credit</strong></small>}<small>{doctors.find((d: any) => d.id === r.doctorId)?.name || ''}</small>{r.lab > 0 && <small>Includes lab: ₹{amount(r.lab)}</small>}</td><td>{amount(r.gross)}</td><td>{amount(r.discount)}</td><td>{amount(r.invoices.every((i: any) => i.status === 'CANCELLED') ? 0 : r.net)}</td><td>{amount(r.collected)}</td><td>{r.methods}</td><td>{amount(r.paid)}</td><td>{amount(r.invoices.every((i: any) => i.status === 'CANCELLED') ? 0 : r.net - r.paid)}</td></tr>)}</tbody></table>
     <section className="receipt-summary"><h3>Summary</h3><dl><dt>Subtotal (Gross Amount)</dt><dd>₹{amount(net + discount)}</dd><dt>Total Discount</dt><dd>₹{amount(discount)}</dd><dt className="receipt-highlight">Net Payable</dt><dd className="receipt-highlight">₹{amount(net)}</dd><dt>Total Paid</dt><dd>₹{amount(paid)}</dd><dt className="receipt-highlight">Outstanding Balance</dt><dd className={`receipt-highlight ${net > paid ? 'receipt-outstanding' : ''}`}>₹{amount(net - paid)}</dd></dl></section>

@@ -219,6 +219,8 @@ model Patient {
   phone String
   email String @default("")
   dob DateTime?
+  age Int?
+  ageRecordedAt DateTime?
   gender String @default("Unspecified")
   address String @default("")
   allergies String @default("")

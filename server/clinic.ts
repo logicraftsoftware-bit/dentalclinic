@@ -72,6 +72,7 @@ const schemas: Record<
       email: z.union([z.string().email(), z.literal('')]).default(''),
       gender: z.enum(['Female', 'Male', 'Other', 'Unspecified']).default('Unspecified'),
       dob: iso.optional(),
+      age: z.number().int().min(0).max(130).nullable().optional(),
       address: string,
       allergies: string,
       medicalHistory: string,
@@ -501,6 +502,7 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
     `/${resource}`,
     run(c.cap, async (req: any, res: any, { store, subscription }: any, actor: any) => {
       const data = c.schema.strict().parse(req.body);
+      if (resource === 'patients' && data.age !== undefined) data.ageRecordedAt = data.age === null ? null : new Date();
       if (c.limit) {
         const filters = ['doctors', 'branches'].includes(c.limit) ? { active: true } : {};
         checkLimit(
@@ -573,6 +575,10 @@ clinicApi.patch(
   '/patients/:id',
   run('patients', async (req: any, res: any, { store }: any, actor: any) => {
     const data = parsePartial(schemas.patients.schema.extend({ archived: z.boolean().optional() }), req.body);
+    if (data.age !== undefined) {
+      const patient = await store.get('patient', id.parse(req.params.id));
+      if (data.age !== patient.age) data.ageRecordedAt = data.age === null ? null : new Date();
+    }
     const row = await store.update('patient', id.parse(req.params.id), data);
     await store.audit(actor.userId, 'patient.updated', row.id);
     res.json(row);

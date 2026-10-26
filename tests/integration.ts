@@ -1868,3 +1868,26 @@ test('charge deletion is clinic scoped, restricted to master managers, and prote
   assert.equal((await request(`/clinic/charges/${inactive.id}`, 'PATCH', { active: false }, clinic.cookie)).status, 200);
   assert.equal((await request(`/clinic/charges/${inactive.id}`, 'DELETE', undefined, clinic.cookie)).status, 200);
 });
+
+test('patient registration and edits retain age gender and address without inventing dates of birth', async () => {
+  const clinic = await register('Patient demographics clinic');
+  const created = await request('/clinic/patients', 'POST', { name: 'Demographics patient', phone: '9000019933', age: 28, gender: 'Female', address: 'GS Road, Guwahati' }, clinic.cookie);
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const patient = created.data;
+  assert.equal(patient.age, 28); assert.equal(patient.gender, 'Female'); assert.equal(patient.address, 'GS Road, Guwahati');
+  assert.ok(patient.ageRecordedAt); assert.equal(patient.dob, null);
+  for (const age of [-1, 131, 1.5, '28']) assert.equal((await request('/clinic/patients', 'POST', { name: 'Invalid age', phone: '9000019934', age }, clinic.cookie)).status, 400);
+  const updated = await request(`/clinic/patients/${patient.id}`, 'PATCH', { address: 'Dispur, Guwahati' }, clinic.cookie);
+  assert.equal(updated.status, 200); assert.equal(updated.data.age, 28); assert.equal(updated.data.gender, 'Female'); assert.equal(updated.data.ageRecordedAt, patient.ageRecordedAt);
+  const unchanged = await request(`/clinic/patients/${patient.id}`, 'PATCH', { age: 28 }, clinic.cookie);
+  assert.equal(unchanged.data.ageRecordedAt, patient.ageRecordedAt);
+  const changed = await request(`/clinic/patients/${patient.id}`, 'PATCH', { age: 29 }, clinic.cookie);
+  assert.equal(changed.status, 200); assert.equal(changed.data.age, 29); assert.equal(changed.data.dob, null);
+  const cleared = await request(`/clinic/patients/${patient.id}`, 'PATCH', { age: null }, clinic.cookie);
+  assert.equal(cleared.status, 200); assert.equal(cleared.data.age, null); assert.equal(cleared.data.ageRecordedAt, null);
+  const newborn = await request('/clinic/patients', 'POST', { name: 'Newborn patient', phone: '9000019935', age: 0 }, clinic.cookie);
+  assert.equal(newborn.status, 201); assert.equal(newborn.data.age, 0);
+  const legacy = await request('/clinic/patients', 'POST', { name: 'Date of birth patient', phone: '9000019936', dob: '1990-01-02T00:00:00.000Z' }, clinic.cookie);
+  assert.equal(legacy.status, 201); assert.equal(legacy.data.age, null); assert.equal(legacy.data.dob, '1990-01-02T00:00:00.000Z');
+  assert.equal((await request(`/clinic/patients/${patient.id}`, 'PATCH', { age: 25 }, b.cookie)).status, 404);
+});

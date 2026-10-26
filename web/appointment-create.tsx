@@ -15,6 +15,9 @@ export function AppointmentCreate({ go, action, workspace }: any) {
   const [branchId, setBranchId] = useState(workspace?.branchId || '');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState('Unspecified');
+  const [address, setAddress] = useState('');
   const [date, setDate] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -56,7 +59,7 @@ export function AppointmentCreate({ go, action, workspace }: any) {
     try {
       let selected = patient;
       if (mode === 'new') {
-        selected = await api('/clinic/patients', 'POST', { name: name.trim(), phone: phone.trim(), ...(doctorId ? { doctorId } : {}), ...(branchId ? { branchId } : {}) });
+        selected = await api('/clinic/patients', 'POST', { name: name.trim(), phone: phone.trim(), ...(age === '' ? {} : { age: Number(age) }), gender, address: address.trim(), ...(doctorId ? { doctorId } : {}), ...(branchId ? { branchId } : {}) });
         // Keep the created patient selected if scheduling fails, so retrying cannot create a duplicate.
         setPatient(selected); setQuery(selected.name); setMode('existing');
       }
@@ -82,7 +85,7 @@ export function AppointmentCreate({ go, action, workspace }: any) {
         {mode === 'existing' ? <div>
           <label>Search patient by name or phone number<input value={query} onFocus={() => setPatientSearchOpen(true)} onChange={e => { setQuery(e.target.value); setPatient(null); }} placeholder="Enter name or phone number" autoComplete="off" /></label>
           {patient ? <p className="appointment-selection">Selected: {patient.name} | {patient.phone}</p> : patientSearchOpen && <div className="appointment-results" aria-label="Patient search results">{!patientsLoading && patients.map(p => <button type="button" key={p.id} onClick={() => { setPatient(p); setQuery(p.name); setPatients([]); }}>{p.name} <span>{p.phone}</span></button>)}{patientsLoading ? <p role="status">Loading patients...</p> : !patients.length && <p>No patients found. Try another name or phone number, or choose New patient.</p>}</div>}
-        </div> : <div className="form-fields"><label>Full name *<input required value={name} onChange={e => setName(e.target.value)} maxLength={200} /></label><label>Phone number *<input type="tel" required minLength={8} maxLength={20} value={phone} onChange={e => setPhone(e.target.value)} /></label></div>}
+        </div> : <div className="form-fields"><label>Full name *<input required value={name} onChange={e => setName(e.target.value)} maxLength={200} /></label><label>Phone number *<input type="tel" required minLength={8} maxLength={20} value={phone} onChange={e => setPhone(e.target.value)} /></label><label>Age (years)<input type="number" min="0" max="130" step="1" value={age} onChange={e => setAge(e.target.value)} placeholder="Enter age" /></label><label>Gender<select aria-label="Gender" value={gender} onChange={e => setGender(e.target.value)}>{['Unspecified', 'Female', 'Male', 'Other'].map(value => <option key={value} value={value}>{value}</option>)}</select></label><label className="full">Address<textarea rows={2} maxLength={10000} value={address} onChange={e => setAddress(e.target.value)} placeholder="Enter address" /></label></div>}
       </fieldset>
       <fieldset disabled={busy || !ready}>
         <legend>Clinic fee</legend>

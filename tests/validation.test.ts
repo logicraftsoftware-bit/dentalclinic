@@ -12,3 +12,15 @@ test('partial updates preserve omitted fields while validating explicit changes'
   assert.throws(() => parsePartial(schema, { unknown: true }), z.ZodError);
   assert.equal(schema.parse({ name: 'New' }).commission, 40);
 });
+
+import { patientAge } from '../shared/patient-age.js';
+test('patient ages support reported years, newborns, elapsed years and existing dates of birth', () => {
+  assert.equal(patientAge({ age: 0, ageRecordedAt: '2026-10-26' }, '2026-10-26'), 0);
+  assert.equal(patientAge({ age: 30, ageRecordedAt: '2025-10-26' }, '2026-10-25'), 30);
+  assert.equal(patientAge({ age: 30, ageRecordedAt: '2025-10-26' }, '2026-10-26'), 31);
+  assert.equal(patientAge({ dob: '1990-11-01', age: 10 }, '2026-10-26'), 35);
+  assert.equal(patientAge({ dob: '1990-11-01' }, '2026-11-01'), 36);
+  assert.equal(patientAge({}, '2026-10-26'), null);
+  assert.equal(patientAge({ dob: 'invalid' }, '2026-10-26'), null);
+  assert.equal(patientAge({ dob: '2027-01-01' }, '2026-10-26'), null);
+});

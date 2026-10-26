@@ -1,3 +1,4 @@
+import { patientAge } from '../shared/patient-age';
 import { PatientCreditPanel, AdjustmentDialog } from './patient-credit';
 import { printPatientBill } from './print-bill';
 import { DentalVisit, ReferralInbox } from './dental-workflow';
@@ -65,6 +66,10 @@ type Field = {
   options?: { value: string; label: string }[];
   value?: any;
   hint?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  readOnly?: boolean;
   updates?: Record<string, Record<string, any>>;
 };
 type Modal = {
@@ -985,6 +990,7 @@ async function patientModal(modal: any, action: any, existing?: any) {
       },
       { key: 'phone', label: 'Phone number', required: true, value: existing?.phone },
       { key: 'email', label: 'Email', type: 'email', value: existing?.email },
+      { key: 'age', label: 'Age (years)', type: 'number', min: 0, max: 130, step: 1, value: existing ? patientAge(existing) ?? '' : '', readOnly: !!existing?.dob, hint: existing?.dob ? 'Calculated from the recorded date of birth.' : undefined },
       {
         key: 'gender',
         label: 'Gender',
@@ -995,7 +1001,7 @@ async function patientModal(modal: any, action: any, existing?: any) {
           label: value,
         })),
       },
-      { key: 'address', label: 'Address', value: existing?.address },
+      { key: 'address', label: 'Address', type: 'textarea', value: existing?.address },
       { key: 'allergies', label: 'Allergies', value: existing?.allergies },
       {
         key: 'medicalHistory',
@@ -1010,12 +1016,12 @@ async function patientModal(modal: any, action: any, existing?: any) {
         value: existing?.consent,
       },
     ],
-    submit: (data: any) =>
+    submit: ({ age, ...data }: any) =>
       action(() =>
         api(
           existing ? `/clinic/patients/${existing.id}` : '/clinic/patients',
           existing ? 'PATCH' : 'POST',
-          data,
+          { ...data, ...(!existing?.dob ? { age: age ?? null } : {}) },
         ),
       ),
   });
@@ -1113,6 +1119,7 @@ function Patients(props: any) {
                 <tr>
                   <th>Patient</th>
                   <th>Phone</th>
+                  <th>Age (years)</th>
                   <th>Gender</th>
                   <th>Added</th>
                   <th>Record</th>
@@ -1133,6 +1140,7 @@ function Patients(props: any) {
                       </div>
                     </td>
                     <td>{p.phone}</td>
+                    <td>{patientAge(p) ?? '—'}</td>
                     <td>{p.gender}</td>
                     <td>{day(p.createdAt)}</td>
                     <td>
@@ -1965,7 +1973,7 @@ function PatientDetail({
       </button>
       <PageTitle
         title={p.name}
-        subtitle={`${p.gender} · ${p.phone} · Patient ${p.id.slice(0, 8).toUpperCase()}`}
+        subtitle={`${patientAge(p) === null ? 'Age not recorded' : `${patientAge(p)} years`} · ${p.gender} · ${p.phone} · Patient ${p.id.slice(0, 8).toUpperCase()}`}
       >
         <button className="secondary" onClick={() => patientModal(modal, action, p)}>
           Edit details
@@ -1984,6 +1992,7 @@ function PatientDetail({
             Registered {day(p.createdAt)} ·{' '}
             {p.consent ? 'Consent recorded' : 'Consent not recorded'}
           </p>
+          <p><strong>Address:</strong> {p.address || 'Not recorded'}</p>
         </div>
         <div className="allergy-alert">
           <HeartPulse size={17} />
@@ -3353,8 +3362,10 @@ function FormModal({ modal, close, notify, refresh }: any) {
                         aria-label={f.label}
                         autoFocus={f === modal.fields[0]}
                         type={f.type === 'money' ? 'number' : f.type || 'text'}
-                        step={f.type === 'money' ? '0.01' : undefined}
-                        min={['number', 'money'].includes(f.type || '') ? 0 : undefined}
+                        step={f.step ?? (f.type === 'money' ? '0.01' : undefined)}
+                        min={f.min ?? (['number', 'money'].includes(f.type || '') ? 0 : undefined)}
+                        max={f.max}
+                        readOnly={f.readOnly}
                         required={f.required}
                         value={Number.isNaN(values[f.key]) ? '' : values[f.key]}
                         onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
