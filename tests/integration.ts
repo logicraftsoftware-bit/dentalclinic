@@ -1834,3 +1834,37 @@ test('cancelled procedures retain receipts as patient credit, support credit use
   assert.deepEqual(simultaneous.map(r => r.status).sort(), [201, 409], 'Concurrent refunds cannot spend the same patient credit');
   assert.equal((await request(creditPath, 'GET', undefined, clinic.cookie)).data.balancePaise, 5000);
 });
+
+test('charge deletion is clinic scoped, restricted to master managers, and protects treatment and draft visit references', async () => {
+  const clinic = await register('Charge deletion clinic');
+  async function create(resource: string, body: any) { const r = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie); assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data; }
+  const group = await create('charge-groups', { name: 'Delete test group' });
+  const charge = await create('charges', { chargeGroupId: group.id, name: 'Unused charge', pricePaise: 10000 });
+  assert.equal((await request(`/clinic/charges/${charge.id}`, 'DELETE', undefined, b.cookie)).status, 404);
+  const email = `${randomUUID()}@example.test`;
+  await create('staff', { name: 'View only receptionist', email, password, role: 'RECEPTIONIST' });
+  const login = await request('/auth/login', 'POST', { email, password });
+  assert.equal((await request(`/clinic/charges/${charge.id}`, 'DELETE', undefined, login.cookie)).status, 403);
+  const patient = await create('patients', { name: 'Charge deletion patient', phone: '9000017711' });
+  const invoice = await create('invoices', { patientId: patient.id, description: charge.name, totalPaise: 10000 });
+  const removed = await request(`/clinic/charges/${charge.id}`, 'DELETE', undefined, clinic.cookie);
+  assert.equal(removed.status, 200, JSON.stringify(removed.data)); assert.equal(removed.data.deleted, true);
+  assert.equal((await request(`/clinic/charges/${charge.id}`, 'GET', undefined, clinic.cookie)).status, 404);
+  assert.equal((await db.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).totalPaise, 10000);
+  assert.equal(await db.clinicAudit.count({ where: { tenantId: clinic.tenantId, action: 'charge.deleted', recordId: charge.id } }), 1);
+  assert.equal((await db.chargeGroup.findUniqueOrThrow({ where: { id: group.id } })).name, group.name);
+  const used = await create('charges', { chargeGroupId: group.id, name: 'Linked charge', pricePaise: 20000 });
+  const plan = await create('plans', { patientId: patient.id, title: 'Linked plan' });
+  await create('items', { planId: plan.id, catalogItemId: used.id, tooth: '36', name: used.name, pricePaise: used.pricePaise });
+  const blocked = await request(`/clinic/charges/${used.id}`, 'DELETE', undefined, clinic.cookie);
+  assert.equal(blocked.status, 409); assert.match(blocked.data.error, /Deactivate/);
+  assert.equal((await db.catalogItem.findUniqueOrThrow({ where: { id: used.id } })).active, true);
+  const doctor = await create('doctors', { name: 'Draft dentist' });
+  const draftCharge = await create('charges', { chargeGroupId: group.id, name: 'Draft visit charge', pricePaise: 30000 });
+  const appointment = await create('appointments', { patientId: patient.id, doctorId: doctor.id, startsAt: new Date(Date.now() + 200 * 86400000).toISOString(), chargeConsultantFee: false, chargeVisitingFee: false });
+  await db.dentalEncounter.create({ data: { tenantId: clinic.tenantId, patientId: patient.id, appointmentId: appointment.id, doctorId: doctor.id, lines: [{ catalogItemId: draftCharge.id, name: draftCharge.name, tooth: '36', pricePaise: 30000 }] } });
+  assert.equal((await request(`/clinic/charges/${draftCharge.id}`, 'DELETE', undefined, clinic.cookie)).status, 409);
+  const inactive = await create('charges', { chargeGroupId: group.id, name: 'Unused inactive charge', pricePaise: 40000 });
+  assert.equal((await request(`/clinic/charges/${inactive.id}`, 'PATCH', { active: false }, clinic.cookie)).status, 200);
+  assert.equal((await request(`/clinic/charges/${inactive.id}`, 'DELETE', undefined, clinic.cookie)).status, 200);
+});

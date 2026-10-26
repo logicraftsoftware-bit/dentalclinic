@@ -17,6 +17,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [page, setPage] = useState(1);
+  const [deletingId, setDeletingId] = useState('');
   useEffect(() => setPage(1), [kind, query, status]);
   useEffect(() => {
     let active = true;
@@ -37,6 +38,19 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
   }, [tick, retry]);
   const groups = data?.['charge-groups'] || [];
   const canManage = ['OWNER', 'MANAGER'].includes(workspace?.role);
+  const removeCharge = async (row: any) => {
+    if (deletingId || !window.confirm(`Permanently delete charge "${row.name}"? Charges linked to treatment records cannot be deleted.`)) return;
+    setDeletingId(row.id);
+    setError('');
+    try {
+      await action(() => api(`/clinic/charges/${row.id}`, 'DELETE'), 'Charge deleted', { reportError: false });
+      setData(old => old ? { ...old, charges: old.charges.filter(charge => charge.id !== row.id) } : old);
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setDeletingId('');
+    }
+  };
   const edit = (row?: any) => {
     const options = groups
       .filter((group) => group.active || group.id === row?.chargeGroupId)
@@ -242,11 +256,12 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
                       <td>
                         {canManage ? (
                           <>
-                            <button className="text-button" onClick={() => edit(row)}>
+                            <button className="text-button" disabled={!!deletingId} onClick={() => edit(row)}>
                               Edit
                             </button>
                             <button
                               className="text-button"
+                              disabled={!!deletingId}
                               onClick={() =>
                                 action(() =>
                                   api(`/clinic/${kind}/${row.id}`, 'PATCH', {
@@ -257,6 +272,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
                             >
                               {row.active ? 'Deactivate' : 'Activate'}
                             </button>
+                            {kind === 'charges' && <button type="button" className="text-button" style={{ color: '#b53e45' }} disabled={!!deletingId} onClick={() => removeCharge(row)}>{deletingId === row.id ? 'Deleting...' : 'Delete'}</button>}
                           </>
                         ) : (
                           'View only'

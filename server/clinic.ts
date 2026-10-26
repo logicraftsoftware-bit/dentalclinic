@@ -629,6 +629,18 @@ for (const resource of [
       },
     ),
   );
+clinicApi.delete('/charges/:id', run('settings', async (req: any, res: any, { store, tx, tenant }: any, actor: any) => {
+  const charge = await store.get('catalogItem', id.parse(req.params.id));
+  // Master charges are shared across branches. Check the entire clinic so a
+  // branch-scoped user cannot delete a charge linked in another branch.
+  const linked = await tx.treatmentItem.count({ where: { tenantId: tenant.id, catalogItemId: charge.id } });
+  assert(!linked, 409, 'This charge is linked to treatment records. Deactivate it instead.');
+  const encounters = await tx.dentalEncounter.findMany({ where: { tenantId: tenant.id }, select: { lines: true } });
+  assert(!encounters.some((encounter: any) => Array.isArray(encounter.lines) && encounter.lines.some((line: any) => line.catalogItemId === charge.id)), 409, 'This charge is linked to a dental visit. Deactivate it instead.');
+  await store.remove('catalogItem', charge.id);
+  await store.audit(actor.userId, 'charge.deleted', charge.id);
+  res.json({ deleted: true });
+}));
 clinicApi.delete(
   '/branches/:id',
   run('settings', async (req: any, res: any, { store, tx, tenant }: any, actor: any) => {

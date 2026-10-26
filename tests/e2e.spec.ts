@@ -712,3 +712,27 @@ test('doctor login, tooth treatment, referral reception scheduling and inherited
   await page.locator('.dental-history').first().locator('summary').click();await expect(page.locator('.dental-history').first()).toContainText('Dental restoration');
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
 });
+
+test('charge master delete confirms before removal and retains other masters', async ({ page }) => {
+  const headers = { Origin: 'http://localhost:5173' }, password = 'Charge-Deletion-Browser-123';
+  const plans = await (await page.request.get('/api/public/plans')).json();
+  const email = `delete-charge-${randomUUID()}@example.test`;
+  expect((await page.request.post('/api/auth/register', { headers, data: { clinicName: 'Delete charge browser clinic', name: 'Owner', email, password, phone: '9876543210', planId: plans.find((p: any) => p.name === 'Enterprise').id, acceptTerms: true } })).status()).toBe(201);
+  await page.request.post('/api/auth/login', { headers, data: { email, password } });
+  const group = await (await page.request.post('/api/clinic/charge-groups', { headers, data: { name: 'Preserved charge group' } })).json();
+  for (const name of ['Remove this charge', 'Keep this charge']) expect((await page.request.post('/api/clinic/charges', { headers, data: { name, chargeGroupId: group.id, pricePaise: 10000 } })).status()).toBe(201);
+  await page.goto('/clinic/masters/charges');
+  const row = page.getByRole('row').filter({ hasText: 'Remove this charge' });
+  page.once('dialog', dialog => dialog.dismiss());
+  await row.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(row).toBeVisible();
+  page.once('dialog', dialog => { expect(dialog.message()).toContain('Remove this charge'); return dialog.accept(); });
+  await row.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('cell', { name: 'Remove this charge', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('cell', { name: 'Keep this charge', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Charge group master', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Preserved charge group', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+});
