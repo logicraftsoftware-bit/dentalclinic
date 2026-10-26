@@ -3585,18 +3585,22 @@ td .text-button {
 .procedure-toolbar { display: flex; align-items: center; gap: 8px; }
 .procedure-billing .reception-section-heading { margin-bottom: 10px; }
 .procedure-billing .reception-section-heading p { font-size: 12px; }
-.procedure-entry-table { min-width: 1030px; table-layout: fixed; margin: 10px 0; }
+.procedure-entry-table { min-width: 1180px; table-layout: fixed; margin: 10px 0; }
 .procedure-entry-table th { padding: 8px 6px; font-size: 10px; text-transform: none; letter-spacing: 0; }
 .procedure-entry-table th:first-child { width: 28px; }
 .procedure-entry-table th:nth-child(2) { width: 240px; }
 .procedure-entry-table th:nth-child(3) { width: 100px; }
 .procedure-entry-table th:nth-child(8) { width: 120px; }
-.procedure-entry-table th:last-child { width: 30px; }
+.procedure-entry-table th:last-child { width: 150px; }
 .procedure-entry-table td { padding: 8px 6px; vertical-align: top; font-size: 12px; }
 .procedure-entry-table input, .procedure-entry-table select { min-width: 0; width: 100%; min-height: 30px; margin: 0 0 4px; padding: 5px 6px; font-size: 12px; }
 .procedure-entry-table strong, .procedure-entry-table small { display: block; }
 .procedure-entry-table small { color: #6a8076; font-size: 10px; line-height: 1.4; margin-top: 3px; }
 .procedure-entry-table .text-button { padding: 0; font-size: 10px; }
+.procedure-entry-table .procedure-cancel-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 7px 10px; border: 1px solid #efc8cc; border-radius: 8px; background: #fff5f5; color: #ac3443; font-size: 11px; font-weight: 600; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.procedure-entry-table .procedure-cancel-button svg { flex-shrink: 0; }
+.procedure-entry-table .procedure-cancel-button:hover:not(:disabled) { background: #ffe8eb; border-color: #d897a0; }
+.procedure-entry-table .procedure-cancel-button:focus-visible { outline: 2px solid #ac3443; outline-offset: 2px; }
 .procedure-new { background: #f7fbf8; }
 .procedure-error { color: #b42318; }
 .procedure-totals { margin-top: 24px; border: 1px solid #dce9e3; border-radius: 14px; overflow: hidden; background: #fff; }
