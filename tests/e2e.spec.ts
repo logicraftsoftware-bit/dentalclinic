@@ -121,13 +121,30 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await expect(restoration).toContainText('Paid by BANK, UPI');
   const saved = await (await page.request.get(`/api/clinic/reception/${appointment.id}`)).json();
   expect(saved.invoices.find((i: any) => i.description === 'Scaling').doctorId).toBe(second.id);
+  await page.goto('/clinic/billing');
+  const search = page.getByRole('searchbox', { name: 'Search billing by name, phone or UHID' });
+  await search.fill('no-such-patient');
+  await expect(page.getByText('No invoices match your search.')).toBeVisible();
+  for (const value of [patient.name, patient.phone, patient.id.slice(0, 8).toUpperCase()]) {
+    await search.fill(value);
+    await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(4);
+  }
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Print bill', exact: true }).first().click();
+  const receiptPopup = await popupPromise;
+  await expect(receiptPopup.locator('.receipt-procedure-table')).toContainText('Restoration');
+  await expect(receiptPopup.locator('.receipt-procedure-table')).toContainText('Scaling');
+  await receiptPopup.close();
+  await page.getByRole('button', { name: 'Open billing', exact: true }).first().click();
+  await expect(page).toHaveURL(new RegExp('/clinic/reception/billing/' + appointment.id));
+  await expect(page.getByLabel('Bill summary')).toBeVisible();
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.receipt-summary')).toContainText('Total Discount₹150.00');
   await expect(page.locator('.receipt-summary')).toContainText('Net Payable₹1,850.00');
   await expect(page.locator('.receipt-procedure-table')).toContainText('BANK, UPI');
   await expect(page.locator('.receipt-procedure-table')).toContainText('700.00');
   await page.locator('.reception-receipt').screenshot({ path: '.tools/screenshots/reception-receipt.png' });
-  const pdf = await page.pdf({ path: '.tools/screenshots/reception-receipt.pdf', format: 'A4', printBackground: true });
+  const pdf = await page.pdf({ path: '.tools/screenshots/reception-receipt.pdf', preferCSSPageSize: true, printBackground: true });
   expect((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length).toBe(1);
   await page.emulateMedia({ media: 'screen' });
   await page.setViewportSize({ width: 390, height: 844 });

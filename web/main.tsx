@@ -1,3 +1,4 @@
+import { printPatientBill } from './print-bill';
 import { DentalVisit, ReferralInbox } from './dental-workflow';
 import { AppointmentCalendar } from './appointment-calendar';
 import { Reception } from './reception';
@@ -1141,10 +1142,16 @@ function Patients(props: any) {
     </>
   );
 }
-function Billing({ tick, modal, action }: any) {
+function Billing({ tick, modal, action, go, notify }: any) {
+  const [billingSearch, setBillingSearch] = useState('');
   const { data, error } = useData('/clinic/invoices', tick);
   const { data: patients } = useData('/clinic/patients', tick);
   const { data: payments } = useData('/clinic/payments', tick);
+  const query = billingSearch.trim().toLowerCase();
+  const visible = data?.filter((i: any) => {
+    const patient = patients?.find((p: any) => p.id === i.patientId);
+    return !query || `${patient?.name || ''} ${patient?.phone || ''} ${patient?.id || i.patientId}`.toLowerCase().includes(query);
+  });
   return (
     <>
       <PageTitle
@@ -1181,7 +1188,7 @@ function Billing({ tick, modal, action }: any) {
       <section className="panel">
         <div className="panel-heading">
           <h2>Patient invoices</h2>
-          <span className="muted">Clinic ledger</span>
+          <label className="billing-search">Search patients<input type="search" aria-label="Search billing by name, phone or UHID" placeholder="Name, phone number or UHID" value={billingSearch} onChange={event => setBillingSearch(event.target.value)} /></label>
         </div>
         {!data ? (
           <DataError error={error} />
@@ -1201,13 +1208,14 @@ function Billing({ tick, modal, action }: any) {
                 </tr>
               </thead>
               <tbody>
-                {data.map((i: any) => (
+                {!visible.length && <tr><td colSpan={6}>No invoices match your search.</td></tr>}
+                {visible.map((i: any) => (
                   <tr key={i.id}>
                     <td>
                       <strong>
                         {patients?.find((p: any) => p.id === i.patientId)?.name || 'Patient'}
                       </strong>
-                      <small>{i.description}</small>
+                      <small>{patients?.find((p: any) => p.id === i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>{i.description}</small>
                     </td>
                     <td>{money(i.totalPaise)}</td>
                     <td>{money(i.paidPaise)}</td>
@@ -1216,7 +1224,8 @@ function Billing({ tick, modal, action }: any) {
                       <Badge value={i.status} />
                     </td>
                     <td>
-                      {i.status !== 'PAID' && (
+                      {i.appointmentId && <button className="secondary small" onClick={() => go(`/clinic/reception/billing/${i.appointmentId}`)}>Open billing</button>}
+                      {!i.appointmentId && i.status !== 'PAID' && (
                         <button
                           className="secondary small"
                           onClick={() => payModal(modal, action, i)}
@@ -1232,11 +1241,11 @@ function Billing({ tick, modal, action }: any) {
                             workspaceSafe(),
                             patients?.find((p: any) => p.id === i.patientId),
                             payments?.filter((p: any) => p.invoiceId === i.id),
-                          )
+                          ).catch((error: Error) => notify(error.message, 'error'))
                         }
                       >
                         <FileText size={15} />
-                        Print
+                        Print bill
                       </button>
                     </td>
                   </tr>
@@ -1290,18 +1299,7 @@ function workspaceSafe() {
   return currentWorkspace;
 }
 function printInvoice(i: any, w: any, p: any, payments: any[] = []) {
-  const escape = (s: any) =>
-    String(s || '').replace(
-      /[&<>"']/g,
-      (c: string) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-    );
-  const popup = window.open('', '_blank');
-  if (!popup) return;
-  popup.document.write(
-    `<html><head><title>Patient invoice</title><style>body{font:15px system-ui;padding:40px;color:#183e39}h1{font-size:26px}table{width:100%;border-collapse:collapse;margin:30px 0}td,th{padding:12px;border-bottom:1px solid #ddd;text-align:left}small{color:#666}</style></head><body><h1>${escape(w?.tenant.name || 'Dental clinic')}</h1><p>${escape(w?.tenant.settings?.address)}</p><p>${escape(w?.tenant.settings?.invoiceHeader)}</p><h2>Patient invoice · ${escape(i.id.slice(0, 8))}</h2><p>${escape(p?.name)} · ${escape(p?.phone)}<br>${escape(day(i.createdAt))}</p><table><tr><th>Description</th><th>Total</th><th>Paid</th><th>Balance</th></tr><tr><td>${escape(i.description)}</td><td>${money(i.totalPaise)}</td><td>${money(i.paidPaise)}</td><td>${money(i.totalPaise - i.paidPaise)}</td></tr></table><h3>Payment receipts</h3>${payments.map((r) => `<p>${escape(day(r.createdAt))} · ${escape(r.method)} · ${money(r.amountPaise)} · ${escape(r.reference)}<br><small>Receipt ${escape(r.id)}</small></p>`).join('')}<p>${escape(w?.tenant.settings?.invoiceFooter || 'Thank you for your trust.')}</p></body></html>`,
-  );
-  popup.document.close();
-  popup.print();
+  return printPatientBill(i, w, p, payments);
 }
 function Doctors({ tick, modal, action, notify, workspace }: any) {
   const { data: doctorLogins } = useData('/clinic/staff', tick);

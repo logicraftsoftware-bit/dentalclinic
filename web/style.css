@@ -3791,7 +3791,7 @@ td .text-button {
   .reception-receipt .receipt-procedure-history th:nth-child(6) { width: 13%; }
   .reception-receipt .receipt-procedure-history td { font-size: 7pt; padding: 1.2mm 2mm; }
 }
-@page reception-bill { size: A4; margin: 12mm; }
+@page reception-bill { size: A5 portrait; margin: 7mm; }
 @media (max-width: 1150px) { .reception-layout { grid-template-columns: 230px minmax(0, 1fr); gap: 16px; }.reception-patients, .reception-billing { padding: 18px; } }
 @media (max-width: 800px) { .reception-layout { grid-template-columns: 1fr; }.reception-calendar { max-width: 100%; }.reception-mini-calendar { max-width: 360px; margin-left: auto; margin-right: auto; }.reception-stats { grid-template-columns: repeat(3, 1fr); }.reception-stats span { display: grid; gap: 8px; }.reception-filters { flex-wrap: wrap; }.reception-section-heading { align-items: start; flex-wrap: wrap; } }
 .appointment-selection { padding: 12px 0; color: #287c6e; }
@@ -3896,3 +3896,24 @@ td .text-button {
 .dental-visit [aria-invalid="true"] { border-color: #bd4939; }
 
 .procedure-billing .procedure-totals { margin-top: 0; margin-bottom: 24px; }
+
+.billing-search { display: grid; gap: 6px; width: min(360px, 100%); font-size: 12px; color: #637b73; }
+@media print {
+  .reception-receipt { position: static; width: 134mm; font-size: 7pt; }
+  .reception-receipt .receipt-brand h1 { font-size: 15pt; }
+  .reception-receipt .receipt-brand img, .reception-receipt .receipt-tooth { width: 12mm; height: 14mm; flex-basis: 12mm; }
+  .reception-receipt .receipt-contact { font-size: 6pt; }
+  .reception-receipt .receipt-title-row h2 { font-size: 10pt; }
+  .reception-receipt .receipt-title-row p { font-size: 7pt; }
+  .reception-receipt .receipt-invoice-meta { min-width: 48mm; grid-template-columns: 14mm 1fr; font-size: 6pt; padding: 2mm; }
+  .reception-receipt .receipt-patient-info { gap: 2mm; padding: 2mm; }
+  .reception-receipt .receipt-patient-info dl { grid-template-columns: 17mm 1fr; gap: 1mm; }
+  .reception-receipt .receipt-patient-info dl + dl { padding-left: 2mm; }
+  .reception-receipt h3 { font-size: 9pt; }
+  .reception-receipt .receipt-summary { padding: 2mm; }
+  .reception-receipt .receipt-summary .receipt-highlight { font-size: 8pt; }
+  .reception-receipt .receipt-procedure-table, .reception-receipt .receipt-procedure-table th, .reception-receipt .receipt-procedure-history td, .reception-receipt .receipt-procedure-history th { font-size: 6pt; }
+  .reception-receipt .receipt-procedure-table small { font-size: 5.5pt; }
+  .reception-receipt .receipt-procedure-table th, .reception-receipt .receipt-procedure-table td, .reception-receipt .receipt-procedure-history th, .reception-receipt .receipt-procedure-history td { padding: 1mm .6mm; }
+  .reception-receipt .receipt-note { padding: 2mm; }
+}
