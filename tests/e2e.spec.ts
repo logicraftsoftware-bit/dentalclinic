@@ -146,6 +146,11 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await page.locator('.reception-receipt').screenshot({ path: '.tools/screenshots/reception-receipt.png' });
   const pdf = await page.pdf({ path: '.tools/screenshots/reception-receipt.pdf', preferCSSPageSize: true, printBackground: true });
   expect((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length).toBe(1);
+  const mediaBox = pdf.toString('latin1').match(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/);
+  expect(Number(mediaBox?.[1])).toBeGreaterThan(418);
+  expect(Number(mediaBox?.[1])).toBeLessThan(421);
+  expect(Number(mediaBox?.[2])).toBeGreaterThan(594);
+  expect(Number(mediaBox?.[2])).toBeLessThan(597);
   await page.emulateMedia({ media: 'screen' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Add procedure', exact: true }).click();

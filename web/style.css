@@ -3917,3 +3917,27 @@ td .text-button {
   .reception-receipt .receipt-procedure-table th, .reception-receipt .receipt-procedure-table td, .reception-receipt .receipt-procedure-history th, .reception-receipt .receipt-procedure-history td { padding: 1mm .6mm; }
   .reception-receipt .receipt-note { padding: 2mm; }
 }
+@media print {
+  .reception-receipt { line-height: 1.2; }
+  .reception-receipt .receipt-letterhead { gap: 3mm; padding-bottom: 2mm; margin-bottom: 2mm; }
+  .reception-receipt .receipt-title-row { margin-bottom: 2mm; }
+  .reception-receipt .receipt-patient-info { margin-bottom: 2mm; }
+  .reception-receipt .receipt-procedure-table td { font-size: 6.5pt; }
+  .reception-receipt .receipt-procedure-table th, .reception-receipt .receipt-procedure-history th { white-space: normal; }
+  .reception-receipt .receipt-summary { margin: 2mm 0; }
+  .reception-receipt .receipt-summary dt, .reception-receipt .receipt-summary dd { padding: .6mm 1.5mm; }
+  .reception-receipt .receipt-summary .receipt-highlight { margin: .4mm 0; }
+  .reception-receipt h3 { margin-bottom: 1.5mm; }
+  .reception-receipt .receipt-payment-history { margin-top: 2mm; }
+  .reception-receipt .receipt-procedure-history td { padding-top: .8mm; padding-bottom: .8mm; }
+  .reception-receipt .receipt-note { margin-top: 2mm; }
+  .reception-receipt .receipt-note ol { margin-top: .5mm; }
+  .reception-receipt .receipt-footer { margin-top: 2mm; padding-top: 2mm; }
+}
+@media print {
+  .reception-receipt p { line-height: 1.2; }
+  .reception-receipt .receipt-brand h1 { font-size: 14pt; }
+  .reception-receipt .receipt-brand img, .reception-receipt .receipt-tooth { width: 11mm; height: 12mm; flex-basis: 11mm; }
+  .reception-receipt .receipt-patient-info { font-size: 6.5pt; }
+  .reception-receipt .receipt-procedure-table th, .reception-receipt .receipt-procedure-table td { padding-top: .8mm; padding-bottom: .8mm; }
+}
