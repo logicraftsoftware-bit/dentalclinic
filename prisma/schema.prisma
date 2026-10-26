@@ -384,6 +384,31 @@ model Payment {
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId])
 }
+// Append-only patient credit ledger. Original invoices and receipts are retained.
+model PatientAdjustment {
+  id String @id @default(uuid()) @map("_id")
+  tenantId String
+  patientId String
+  invoiceId String
+  appointmentId String?
+  sourceId String?
+  key String
+  type String
+  amountPaise Int
+  cancelledPaise Int @default(0)
+  commissionReversalPaise Int @default(0)
+  paidCommissionRecoveryPaise Int @default(0)
+  reason String
+  method String
+  reference String @default("")
+  actorId String
+  actorName String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, id])
+  @@unique([tenantId, key])
+  @@index([tenantId, patientId])
+  @@index([tenantId, invoiceId])
+}
 model Commission {
   id String @id @default(uuid()) @map("_id")
   tenantId String

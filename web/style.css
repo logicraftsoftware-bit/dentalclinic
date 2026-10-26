@@ -3941,3 +3941,13 @@ td .text-button {
   .reception-receipt .receipt-patient-info { font-size: 6.5pt; }
   .reception-receipt .receipt-procedure-table th, .reception-receipt .receipt-procedure-table td { padding-top: .8mm; padding-bottom: .8mm; }
 }
+
+.patient-credit-panel, .procedure-cancelled { border-top: 1px solid #dce9e3; padding: 20px 0; margin-top: 20px; }
+.patient-credit-apply { display: flex; align-items: end; gap: 12px; margin: 18px 0; flex-wrap: wrap; }
+.patient-credit-apply label { flex: 1 1 240px; display: grid; gap: 6px; }
+.procedure-cancelled small { display: block; margin: 5px 0 12px; color: #637b73; }
+.adjustment-dialog { max-width: 560px; }
+.adjustment-dialog fieldset { min-width: 0; border: 0; padding: 22px; display: grid; gap: 16px; }
+.adjustment-dialog label { display: grid; gap: 6px; }
+.adjustment-dialog p { margin: 0; }
+.adjustment-dialog textarea { min-height: 90px; }

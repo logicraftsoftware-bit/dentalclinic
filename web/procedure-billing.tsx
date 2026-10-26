@@ -3,6 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { api, money } from './api';
 import { BillReceipt } from './bill-receipt';
 import { billingLines, procedureCollections } from './billing-lines';
+import { AdjustmentDialog, PatientCreditPanel } from './patient-credit';
 
 type Draft = { key: string; name: string; doctorId: string; charge: string; lab: string };
 type Entry = { discount: string; collect: string; method: string; reference: string };
@@ -13,13 +14,15 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
   const [data, setData] = useState<any>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]), [entries, setEntries] = useState<Record<string, Entry>>({});
   const [checkoutKey, setCheckoutKey] = useState(() => crypto.randomUUID());
+  const [cancelling, setCancelling] = useState<any>(null);
   useEffect(() => { let active = true; api(`/clinic/reception/${appointmentId}`).then(value => { if (active) { setData(value); setError(''); } }).catch(e => { if (active) setError(e.message); }); return () => { active = false; }; }, [appointmentId, tick]);
   function editEntry(key: string, patch: Partial<Entry>) { setEntries(old => ({ ...old, [key]: { ...emptyEntry, ...old[key], ...patch } })); }
   function editDraft(key: string, patch: Partial<Draft>) { setDrafts(old => old.map(d => d.key === key ? { ...d, ...patch } : d)); }
   if (!data) return <section className="panel reception-billing"><button className="secondary" onClick={close}>Back to patients</button>{error ? <p role="alert">{error}</p> : <p role="status">Loading billing desk...</p>}</section>;
   const appointment = data.appointment, blocked = ['ABSENT', 'CANCELLED'].includes(appointment.status);
-  const saved = billingLines(data.invoices, data.payments || []);
-  const collections = procedureCollections(saved, data.payments || []);
+  const saved = billingLines(data.invoices.filter((i: any) => i.status !== 'CANCELLED'), data.payments || []);
+  const cancelled = billingLines(data.invoices.filter((i: any) => i.status === 'CANCELLED'), data.payments || []);
+  const collections = procedureCollections(billingLines(data.invoices, data.payments || []), data.payments || []);
   const fees = [
     { name: 'Consultant fee', amount: appointment.consultationPaise }, { name: 'Visiting consultant fee', amount: appointment.visitingConsultationPaise }, { name: 'Clinic fee', amount: appointment.clinicFeePaise },
   ];
@@ -72,12 +75,15 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
           <td>{r.kind === 'draft' ? <><input required type="number" min="0" max="10000000" step="0.01" aria-label={`Charge ${index + 1}`} value={r.draft.charge} onChange={event => editDraft(r.draft.key, { charge: event.target.value })} /><input type="number" min="0" max="10000000" step="0.01" aria-label={`Lab charge ${index + 1}`} placeholder="Lab: 0" value={r.draft.lab} onChange={event => editDraft(r.draft.key, { lab: event.target.value })} /></> : <>{money(r.gross - r.lab)}{r.lab > 0 && <small>Lab: {money(r.lab)}</small>}</>}</td>
           <td><input type="number" min="0" max={(r.net - r.paid) / 100} step="0.01" aria-label={`Discount ${index + 1}`} placeholder="0" value={e.discount} onChange={event => editEntry(r.key, { discount: event.target.value })} /></td><td>{money(r.net - discount)}</td><td>{money(r.paid)}</td>
           <td><input type="number" min="0" max={Math.max(0, due) / 100} step="0.01" aria-label={`Collect ${index + 1}`} placeholder="0" value={e.collect} onChange={event => editEntry(r.key, { collect: event.target.value })} /><button type="button" className="text-button" disabled={due <= 0} aria-label={`Collect balance ${index + 1}`} onClick={() => editEntry(r.key, { collect: String(due / 100) })}>Balance</button>{r.collected > 0 && <small>Last: {money(r.collected)}</small>}</td>
-          <td><select aria-label={`Payment method ${index + 1}`} value={e.method} onChange={event => editEntry(r.key, { method: event.target.value })}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method}</option>)}</select><input maxLength={200} aria-label={`Payment reference ${index + 1}`} placeholder="Reference" value={e.reference} onChange={event => editEntry(r.key, { reference: event.target.value })} />{r.paid > 0 && <small>Paid by {r.methods}</small>}</td><td className={due - collect < 0 ? 'procedure-error' : ''}>{money(due - collect)}</td><td>{r.kind === 'draft' && <button type="button" className="text-button" aria-label={`Remove procedure ${index + 1}`} onClick={() => setDrafts(old => old.filter(d => d.key !== r.draft.key))}><Trash2 size={15} /></button>}</td></tr>;
+          <td><select aria-label={`Payment method ${index + 1}`} value={e.method} onChange={event => editEntry(r.key, { method: event.target.value })}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method}</option>)}</select><input maxLength={200} aria-label={`Payment reference ${index + 1}`} placeholder="Reference" value={e.reference} onChange={event => editEntry(r.key, { reference: event.target.value })} />{r.paid > 0 && <small>Paid by {r.methods}</small>}</td><td className={due - collect < 0 ? 'procedure-error' : ''}>{money(due - collect)}</td><td>{r.kind === 'saved' && <button type="button" className="text-button" disabled={busy || changed} title={changed ? 'Save bill changes before cancelling' : 'Cancel this procedure'} onClick={() => setCancelling(r)}>Cancel procedure</button>}{r.kind === 'draft' && <button type="button" className="text-button" aria-label={`Remove procedure ${index + 1}`} onClick={() => setDrafts(old => old.filter(d => d.key !== r.draft.key))}><Trash2 size={15} /></button>}</td></tr>;
       })}</tbody></table></div>
       {invalid && <p role="alert" className="error-banner">A procedure discount or collection exceeds that procedure’s unpaid balance.</p>}
     </fieldset></form>
     {blocked && <p>This appointment is {appointment.status.toLowerCase()}. Mark the patient present before billing.</p>}
     <details className="procedure-history"><summary>Payment history ({collections.length} collections)</summary><div className="table-wrap"><table><thead><tr><th>Procedure</th><th>Date</th><th>Method</th><th>Reference</th><th>Collected</th></tr></thead><tbody>{collections.map((p: any) => <tr key={p.id}><td>{p.name}</td><td>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.createdAt))}</td><td>{p.method}</td><td>{p.reference || '—'}</td><td>{money(p.amountPaise)}</td></tr>)}</tbody></table></div></details>
+    {cancelled.length > 0 && <section className="procedure-cancelled"><h3>Cancelled procedures</h3>{cancelled.map(r => <p key={r.key}><strong>{r.name}</strong> — Cancelled · Original net {money(r.net)} · Paid amount moved to credit {money(r.paid)}<small>{data.adjustments?.find((e: any) => e.type === 'CANCEL' && r.invoiceIds.includes(e.invoiceId))?.reason}</small></p>)}</section>}
+    <PatientCreditPanel disabled={busy || changed} patientId={data.patient.id} invoices={data.invoices} tick={tick} action={action} zone={zone} onChanged={async () => { setData(await api(`/clinic/reception/${appointmentId}`)); setEntries({}); setCheckoutKey(crypto.randomUUID()); }} />
+    {cancelling && <AdjustmentDialog type="CANCEL" patientId={data.patient.id} procedure={cancelling} action={action} close={() => setCancelling(null)} onSaved={async () => { setData(await api(`/clinic/reception/${appointmentId}`)); setEntries({}); setCheckoutKey(crypto.randomUUID()); }} />}
     <BillReceipt data={data} workspace={workspace} zone={zone} />
   </section>;
 }

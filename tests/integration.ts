@@ -1759,3 +1759,78 @@ test('doctor treatment closes into reception billing and a cross-branch internal
   assert.equal((await request('/clinic/workspace','GET',undefined,loginA.cookie)).status,401);
   assert.equal((await request('/auth/login','POST',{email:emailA,password},undefined)).status,401);
 });
+
+test('cancelled procedures retain receipts as patient credit, support credit use and refunds, and reconcile accounts', async () => {
+  const clinic = await register('Cancellation and patient credit clinic');
+  const enterprise = await db.plan.findFirstOrThrow({ where: { name: 'Enterprise' } });
+  await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { planId: enterprise.id } });
+  async function create(resource: string, body: any) {
+    const result = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie);
+    assert.equal(result.status, 201, JSON.stringify(result.data)); return result.data;
+  }
+  const doctor = await create('doctors', { name: 'Credit dentist', commissionPercent: 40 });
+  const patient = await create('patients', { name: 'Credit patient', phone: '9000067878' });
+  const otherPatient = await create('patients', { name: 'Other credit patient', phone: '9000067879' });
+  const appointment = await create('appointments', { patientId: patient.id, doctorId: doctor.id, startsAt: new Date(Date.now() + 50 * 86400000).toISOString(), chargeConsultantFee: false, chargeVisitingFee: false, useClinicFee: false });
+  const lineKey = randomUUID();
+  const billed = await request(`/clinic/reception/${appointment.id}/line-checkout`, 'POST', {
+    checkoutKey: randomUUID(), lines: [{ key: lineKey, name: 'Cancelled crown', doctorId: doctor.id, chargePaise: 100000, labChargePaise: 20000 }],
+    settlements: [{ lineKey, discountPaise: 10000, amountPaise: 60000, method: 'UPI', reference: 'ORIGINAL-UPI' }],
+  }, clinic.cookie);
+  assert.equal(billed.status, 201, JSON.stringify(billed.data));
+  const ids = billed.data.invoices.map((i: any) => i.id);
+  const originalReceipts = await db.payment.findMany({ where: { invoiceId: { in: ids } } });
+  const commission = await db.commission.findFirstOrThrow({ where: { paymentId: { in: originalReceipts.map(p => p.id) } } });
+  assert.equal((await request(`/clinic/commissions/${commission.id}/payout`, 'POST', { reference: 'PAID-BEFORE-CANCELLATION' }, clinic.cookie)).status, 200);
+  const cancellation = { requestKey: randomUUID(), invoiceIds: ids, reason: 'Patient chose to postpone crown' };
+  assert.equal((await request('/clinic/procedure-cancellations', 'POST', { ...cancellation, reason: ' ' }, clinic.cookie)).status, 400);
+  assert.equal((await request('/clinic/procedure-cancellations', 'POST', { ...cancellation, invoiceIds: [ids[0]] }, clinic.cookie)).status, 400);
+  assert.equal((await request('/clinic/procedure-cancellations', 'POST', cancellation, b.cookie)).status, 404);
+  const cancelled = await request('/clinic/procedure-cancellations', 'POST', cancellation, clinic.cookie);
+  assert.equal(cancelled.status, 201, JSON.stringify(cancelled.data));
+  assert.equal(cancelled.data.creditAddedPaise, 60000); assert.equal(cancelled.data.balancePaise, 60000);
+  assert.equal((await request('/clinic/procedure-cancellations', 'POST', cancellation, clinic.cookie)).data.balancePaise, 60000);
+  assert.equal((await request('/clinic/procedure-cancellations', 'POST', { ...cancellation, requestKey: randomUUID() }, clinic.cookie)).status, 409);
+  assert.equal((await db.commission.findUniqueOrThrow({ where: { id: commission.id } })).status, 'RECOVERY_DUE');
+  assert.equal((await request(`/clinic/commissions/${commission.id}/payout`, 'POST', { reference: 'DO-NOT-PAY-TWICE' }, clinic.cookie)).status, 409);
+  assert.deepEqual(await db.payment.findMany({ where: { invoiceId: { in: ids } } }), originalReceipts);
+  const detail = (await request(`/clinic/reception/${appointment.id}`, 'GET', undefined, clinic.cookie)).data;
+  assert.ok(detail.invoices.every((i: any) => i.status === 'CANCELLED'));
+  assert.equal(detail.appointment.paymentStatus, 'NOT_REQUIRED');
+  assert.equal(detail.creditBalancePaise, 60000);
+  assert.equal((await request('/clinic/payments', 'POST', { invoiceId: ids[0], amountPaise: 1, method: 'CASH', idempotencyKey: randomUUID() }, clinic.cookie)).status, 409);
+  const target = await create('invoices', { patientId: patient.id, description: 'Future treatment', totalPaise: 50000 });
+  const foreignTarget = await create('invoices', { patientId: otherPatient.id, description: 'Other patient treatment', totalPaise: 50000 });
+  const creditPath = `/clinic/patient-credits/${patient.id}`;
+  const apply = { requestKey: randomUUID(), invoiceIds: [target.id], amountPaise: 20000, reason: 'Apply existing crown credit' };
+  assert.equal((await request(creditPath + '/apply', 'POST', { ...apply, invoiceIds: [foreignTarget.id] }, clinic.cookie)).status, 400);
+  assert.equal((await request(creditPath + '/apply', 'POST', apply, clinic.cookie)).status, 201);
+  assert.equal((await request(creditPath + '/apply', 'POST', apply, clinic.cookie)).data.balancePaise, 40000);
+  assert.equal((await db.payment.findFirstOrThrow({ where: { invoiceId: target.id } })).method, 'CREDIT');
+  const refund = { requestKey: randomUUID(), amountPaise: 15000, method: 'BANK', reference: 'REFUND-BANK-123', reason: 'Patient requested a partial refund' };
+  assert.equal((await request(creditPath + '/refund', 'POST', { ...refund, amountPaise: 40001 }, clinic.cookie)).status, 409);
+  assert.equal((await request(creditPath + '/refund', 'POST', refund, b.cookie)).status, 404);
+  const refunded = await request(creditPath + '/refund', 'POST', refund, clinic.cookie);
+  assert.equal(refunded.status, 201, JSON.stringify(refunded.data)); assert.equal(refunded.data.balancePaise, 25000);
+  await request(creditPath + '/refund', 'POST', refund, clinic.cookie);
+  const ledger = (await request(creditPath, 'GET', undefined, clinic.cookie)).data;
+  assert.equal(ledger.balancePaise, 25000);
+  assert.equal(ledger.entries.filter((e: any) => e.type === 'REFUND').reduce((n: number, e: any) => n - e.amountPaise, 0), 15000);
+  assert.ok(ledger.entries.every((e: any) => e.actorName === 'Test owner' && e.reason && e.actorId));
+  const report = (await request('/clinic/accounts', 'GET', undefined, clinic.cookie)).data;
+  assert.equal(report.totals.cancelled, 110000); assert.equal(report.totals.creditAdded, 60000);
+  assert.equal(report.totals.creditUsed, 20000); assert.equal(report.totals.patientCredit, 25000);
+  assert.equal(report.totals.refunds, 15000); assert.equal(report.totals.netCash, 45000);
+  assert.equal(report.totals.collected, 60000, 'Credit reuse must not count as new cash');
+  assert.equal(report.totals.commissionReversed, commission.amountPaise);
+  assert.equal(report.totals.commissionRecovery, commission.amountPaise);
+  assert.equal(report.totals.outstanding, 80000, 'Cancelled unpaid balance is removed');
+  assert.equal(report.activity.filter((e: any) => e.type === 'CANCEL').length, 2);
+  const exportResult = await request('/clinic/export?patientId=' + patient.id, 'GET', undefined, clinic.cookie);
+  assert.equal(exportResult.status, 200); assert.equal(exportResult.data.records.patientAdjustment.length, ledger.entries.length);
+  const unpaidCancel = await request('/clinic/procedure-cancellations', 'POST', { requestKey: randomUUID(), invoiceIds: [foreignTarget.id], reason: 'Unpaid treatment not needed' }, clinic.cookie);
+  assert.equal(unpaidCancel.status, 201); assert.equal(unpaidCancel.data.creditAddedPaise, 0);
+  const simultaneous = await Promise.all([1, 2].map(() => request(creditPath + '/refund', 'POST', { ...refund, requestKey: randomUUID(), amountPaise: 20000 }, clinic.cookie)));
+  assert.deepEqual(simultaneous.map(r => r.status).sort(), [201, 409], 'Concurrent refunds cannot spend the same patient credit');
+  assert.equal((await request(creditPath, 'GET', undefined, clinic.cookie)).data.balancePaise, 5000);
+});

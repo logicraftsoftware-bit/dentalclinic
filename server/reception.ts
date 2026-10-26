@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assert, id, money, hash } from './core.js';
 import { recordCheckoutPayment } from './patient-payments.js';
 import { doctorAvailableAt } from './doctor-branches.js';
+import { creditBalance } from './patient-adjustments.js';
 
 // The same source keys are used when the doctor closes a visit, so reception
 // can collect its selected appointment fee without billing that fee twice.
@@ -54,7 +55,7 @@ async function saveReceptionBill(store: any, appointment: any, input: z.infer<ty
       if (line.chargePaise) await store.create('invoice', { ...base, sourceKey: `${prefix}${index}:procedure`, chargeKind: 'PROCEDURE', description: line.name, totalPaise: line.chargePaise });
       if (line.labChargePaise) await store.create('invoice', { ...base, sourceKey: `${prefix}${index}:lab`, chargeKind: 'LAB', description: `Lab: ${line.name}`, totalPaise: line.labChargePaise });
     }
-    const invoices = await store.list('invoice', { appointmentId: appointment.id });
+    const invoices = (await store.list('invoice', { appointmentId: appointment.id })).filter((i: any) => i.status !== 'CANCELLED');
     assert(invoices.length > 0, 400, 'Add a procedure to create a bill.');
     const total = invoices.reduce((n: number, i: any) => n + i.totalPaise, 0);
     const paid = invoices.reduce((n: number, i: any) => n + i.paidPaise, 0);
@@ -84,7 +85,7 @@ async function createCheckoutCharges({ store, tx, tenant }: any, appointment: an
   }
   if (rows.length) await tx.invoice.createMany({ data: rows });
   assert(rows.length || invoices.length, 400, 'Add a procedure to create a bill.');
-  return store.list('invoice', { appointmentId: appointment.id }, { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+  return (await store.list('invoice', { appointmentId: appointment.id }, { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })).filter((i: any) => i.status !== 'CANCELLED');
 }
 
 export function registerReceptionRoutes(router: Router, run: any) {
@@ -97,7 +98,8 @@ export function registerReceptionRoutes(router: Router, run: any) {
       store.list('catalogItem', { active: true }),
     ]);
     const payments = invoices.length ? await store.list('payment', { invoiceId: { in: invoices.map((i: any) => i.id) } }, { orderBy: { createdAt: 'desc' } }) : [];
-    res.json({ appointment, patient, invoices, payments,
+    const adjustments = await store.list('patientAdjustment', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } });
+    res.json({ appointment, patient, invoices, payments, adjustments, creditBalancePaise: creditBalance(adjustments),
       doctors: doctors.filter((d: any) => !appointment.branchId || doctorAvailableAt(d, appointment.branchId))
         .map((d: any) => ({ id: d.id, name: d.name, specialty: d.specialty })), charges });
   }));

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 // holds the tenant write lock. Batch inserts avoid re-reading every invoice and
 // patient for each payment while retaining the same transaction and commissions.
 export async function recordCheckoutPayment({ store, tx, tenant }: any, invoices: any[], payment: any, checkoutKey: string, actor: any) {
+  assert(invoices.every(i => i.status !== 'CANCELLED'), 409, 'Cancelled procedures cannot receive payments.');
   let remaining = payment.amountPaise;
   const allocations: { invoice: any; amountPaise: number; id: string }[] = [];
   for (const invoice of invoices) {
@@ -48,6 +49,7 @@ export async function recordInvoicePayment({ store, tx, tenant }: any, data: any
     return { payment: previous[0], replayed: true };
   }
   const invoice = await store.get('invoice', data.invoiceId);
+  assert(invoice.status !== 'CANCELLED', 409, 'Cancelled procedures cannot receive payments.');
   assert(data.amountPaise > 0 && data.amountPaise <= invoice.totalPaise - invoice.paidPaise, 409, 'Payment exceeds the invoice balance.');
   const row = await store.create('payment', data);
   const paid = invoice.paidPaise + data.amountPaise;
@@ -59,7 +61,7 @@ export async function recordInvoicePayment({ store, tx, tenant }: any, data: any
     if (doctor.commissionPercent) await tx.commission.create({ data: { tenantId: tenant.id, doctorId: doctor.id, paymentId: row.id, percent: doctor.commissionPercent, amountPaise: Math.round(data.amountPaise * doctor.commissionPercent / 100) } });
   }
   if (invoice.appointmentId) {
-    const linked = await store.list('invoice', { appointmentId: invoice.appointmentId });
+    const linked = (await store.list('invoice', { appointmentId: invoice.appointmentId })).filter((i: any) => i.status !== 'CANCELLED');
     const total = linked.reduce((n: number, i: any) => n + i.totalPaise, 0);
     const received = linked.reduce((n: number, i: any) => n + i.paidPaise, 0);
     await tx.appointment.update({ where: { tenantId_id: { tenantId: tenant.id, id: invoice.appointmentId } }, data: { paymentStatus: received >= total ? 'PAID' : received > 0 ? 'PARTIAL' : 'PENDING' } });

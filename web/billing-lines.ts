@@ -1,7 +1,8 @@
+import { procedureKey } from '../shared/procedure-key';
 export function billingLines(invoices: any[], payments: any[]) {
   const groups = new Map<string, any>();
   for (const i of invoices) {
-    const key = i.sourceKey?.startsWith('reception:') ? i.sourceKey.replace(/:(procedure|lab)$/, '') : i.sourceKey?.match(/:(procedure|lab):\d+$/) ? i.sourceKey.replace(/:(procedure|lab):(\d+)$/, ':line:$2') : i.id;
+    const key = procedureKey(i);
     if (!groups.has(key)) groups.set(key, { key, invoices: [], name: i.description.replace(/^Lab: /, ''), doctorId: i.doctorId });
     const group = groups.get(key); group.invoices.push(i);
     if (i.chargeKind !== 'LAB' && !i.description.startsWith('Lab:')) { group.name = i.description; group.doctorId = i.doctorId; }

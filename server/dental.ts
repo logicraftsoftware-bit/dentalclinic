@@ -122,7 +122,7 @@ export function registerDentalRoutes(router: Router, run: any, validateSlot: any
       if (data.nextVisit) await store.create('followUp', { patientId: patient.id, title: `Review after dental visit: ${data.diagnosis}`, dueAt: data.nextVisit });
       if (referral) await tx.internalReferral.create({ data: { tenantId: tenant.id, patientId: patient.id, encounterId: encounter.id, sourceAppointmentId: appointment.id, fromDoctorId: appointment.doctorId, toDoctorId: target.id, sourceBranchId: appointment.branchId, targetBranchId: targetBranch, reason: referral.reason } });
       encounter = await tx.dentalEncounter.update({ where: { tenantId_id: { tenantId: tenant.id, id: encounter.id } }, data: { planId: plan.id } });
-      const visitInvoices = await store.list('invoice', { appointmentId: appointment.id });
+      const visitInvoices = (await store.list('invoice', { appointmentId: appointment.id })).filter((i: any) => i.status !== 'CANCELLED');
       const total = visitInvoices.reduce((sum: number, i: any) => sum + i.totalPaise, 0);
       const paid = visitInvoices.reduce((sum: number, i: any) => sum + i.paidPaise, 0);
       await store.update('appointment', appointment.id, { status: 'COMPLETED', paymentStatus: !total ? 'NOT_REQUIRED' : paid >= total ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING' });

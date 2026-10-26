@@ -157,6 +157,7 @@ export const ownedModels = [
   'treatmentSession',
   'invoice',
   'payment',
+  'patientAdjustment',
   'commission',
   'document',
   'prescription',
@@ -230,6 +231,7 @@ export class TenantStore {
           'treatmentItem',
           'treatmentSession',
           'payment',
+          'patientAdjustment',
           'commission',
         ].includes(name)
       ) {
@@ -325,6 +327,7 @@ export class TenantStore {
       catalogItem: { chargeGroupId: 'chargeGroup' },
       invoice: { patientId: 'patient', sessionId: 'treatmentSession' },
       payment: { invoiceId: 'invoice' },
+      patientAdjustment: { patientId: 'patient', invoiceId: 'invoice' },
       commission: { doctorId: 'doctor', paymentId: 'payment' },
       document: { patientId: 'patient' },
       prescription: { patientId: 'patient' },

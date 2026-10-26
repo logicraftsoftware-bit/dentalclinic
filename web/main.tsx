@@ -1,3 +1,4 @@
+import { PatientCreditPanel, AdjustmentDialog } from './patient-credit';
 import { printPatientBill } from './print-bill';
 import { DentalVisit, ReferralInbox } from './dental-workflow';
 import { AppointmentCalendar } from './appointment-calendar';
@@ -1143,6 +1144,9 @@ function Patients(props: any) {
   );
 }
 function Billing({ tick, modal, action, go, notify }: any) {
+  const [cancellingInvoice, setCancellingInvoice] = useState<any>(null);
+  const [creditPatient, setCreditPatient] = useState('');
+  const { data: billingTotals } = useData('/clinic/billing-totals', tick);
   const [billingSearch, setBillingSearch] = useState('');
   const { data, error } = useData('/clinic/invoices', tick);
   const { data: patients } = useData('/clinic/patients', tick);
@@ -1166,20 +1170,20 @@ function Billing({ tick, modal, action, go, notify }: any) {
       <div className="metrics three">
         <Metric
           label="Total invoiced"
-          value={money(data?.reduce((s: number, i: any) => s + i.totalPaise, 0))}
+          value={money(billingTotals?.totalPaise)}
           detail="Patient treatment & consultation fees"
           icon={FileText}
         />
         <Metric
-          label="Collected"
-          value={money(data?.reduce((s: number, i: any) => s + i.paidPaise, 0))}
-          detail={`${payments?.length || 0} recorded payments`}
+          label="Net collected after refunds"
+          value={money(billingTotals?.collectedPaise)}
+          detail={`${billingTotals?.paymentCount || 0} payments · Patient credit ${money(billingTotals?.creditBalancePaise)}`}
           icon={Wallet}
           color="blue"
         />
         <Metric
           label="Outstanding"
-          value={money(data?.reduce((s: number, i: any) => s + i.totalPaise - i.paidPaise, 0))}
+          value={money(billingTotals?.outstandingPaise)}
           detail="Installments still to be received"
           icon={CreditCard}
           color="peach"
@@ -1219,13 +1223,13 @@ function Billing({ tick, modal, action, go, notify }: any) {
                     </td>
                     <td>{money(i.totalPaise)}</td>
                     <td>{money(i.paidPaise)}</td>
-                    <td>{money(i.totalPaise - i.paidPaise)}</td>
+                    <td>{i.status === 'CANCELLED' ? money(0) : money(i.totalPaise - i.paidPaise)}</td>
                     <td>
                       <Badge value={i.status} />
                     </td>
                     <td>
                       {i.appointmentId && <button className="secondary small" onClick={() => go(`/clinic/reception/billing/${i.appointmentId}`)}>Open billing</button>}
-                      {!i.appointmentId && i.status !== 'PAID' && (
+                      {!i.appointmentId && !['PAID', 'CANCELLED'].includes(i.status) && (
                         <button
                           className="secondary small"
                           onClick={() => payModal(modal, action, i)}
@@ -1247,6 +1251,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
                         <FileText size={15} />
                         Print bill
                       </button>
+                      <button className="text-button" onClick={() => setCreditPatient(i.patientId)}>Credit / refund</button>{!i.appointmentId && i.status !== 'CANCELLED' && <button className="text-button" onClick={() => setCancellingInvoice(i)}>Cancel procedure</button>}
                     </td>
                   </tr>
                 ))}
@@ -1291,6 +1296,8 @@ function Billing({ tick, modal, action, go, notify }: any) {
           />
         )}
       </section>
+    {creditPatient && <div className="modal-backdrop"><section className="modal adjustment-dialog" role="dialog" aria-modal="true" aria-label="Patient credit"><div className="panel-heading"><h2>Patient credit</h2><button className="secondary small" onClick={() => setCreditPatient('')}>Close</button></div><PatientCreditPanel patientId={creditPatient} invoices={(data || []).filter((i: any) => i.patientId === creditPatient)} tick={tick} action={action} /></section></div>}
+    {cancellingInvoice && <AdjustmentDialog type="CANCEL" patientId={cancellingInvoice.patientId} procedure={{ name: cancellingInvoice.description, paid: cancellingInvoice.paidPaise, invoiceIds: [cancellingInvoice.id] }} action={action} close={() => setCancellingInvoice(null)} onSaved={() => {}} />}
     </>
   );
 }
@@ -2153,6 +2160,7 @@ function PatientDetail({
           )}
         </>
       )}
+      {tab === 'Billing' && <PatientCreditPanel patientId={p.id} invoices={invoices} tick={tick} action={action} zone={workspace?.tenant?.settings?.timezone || 'Asia/Kolkata'} />}
       {tab === 'Billing' && (
         <section className="panel">
           <div className="panel-heading">
@@ -2181,12 +2189,12 @@ function PatientDetail({
                       <td>{i.description}</td>
                       <td>{money(i.totalPaise)}</td>
                       <td>{money(i.paidPaise)}</td>
-                      <td>{money(i.totalPaise - i.paidPaise)}</td>
+                      <td>{i.status === 'CANCELLED' ? money(0) : money(i.totalPaise - i.paidPaise)}</td>
                       <td>
                         <Badge value={i.status} />
                       </td>
                       <td>
-                        {i.status !== 'PAID' && (
+                        {!['PAID', 'CANCELLED'].includes(i.status) && (
                           <button
                             className="secondary small"
                             onClick={() => payModal(modal, action, i)}

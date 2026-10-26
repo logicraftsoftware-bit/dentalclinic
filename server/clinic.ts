@@ -1,5 +1,6 @@
 import { parsePartial } from './validation.js';
 import { recordInvoicePayment } from './patient-payments.js';
+import { billingTotals, registerPatientAdjustmentRoutes } from './patient-adjustments.js';
 import { accountsReport } from './accounts-report.js';
 import { registerDentalRoutes } from './dental.js';
 import { registerReceptionRoutes } from './reception.js';
@@ -286,8 +287,8 @@ clinicApi.get(
         doctors: doctors.length,
         appointments: appts,
         followups,
-        collectionsPaise: invoices.reduce((s: number, i: any) => s + i.paidPaise, 0),
-        outstandingPaise: invoices.reduce((s: number, i: any) => s + i.totalPaise - i.paidPaise, 0),
+        collectionsPaise: invoices.length ? (await billingTotals(store)).collectedPaise : 0,
+        outstandingPaise: invoices.filter((i: any) => i.status !== 'CANCELLED').reduce((s: number, i: any) => s + i.totalPaise - i.paidPaise, 0),
       });
     },
   ),
@@ -399,6 +400,7 @@ async function prepareMasterData(resource: string, data: any, store: any, old?: 
 }
 registerDentalRoutes(clinicApi, run, validateSlot);
 registerReceptionRoutes(clinicApi, run);
+registerPatientAdjustmentRoutes(clinicApi, run);
 // A bounded calendar range returns every matching visit, without the generic 500-row limit.
 clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res: any, { store, tenant }: any) => {
   const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -1015,25 +1017,30 @@ clinicApi.get('/accounts', run('reports', async (req: any, res: any, { store, te
   const dayFilter = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
   const filters = z.object({ from: dayFilter, to: dayFilter, period: z.enum(['all', 'today', 'yesterday', '7days', '1month', '3months', '6months', 'custom']).optional(), doctorId: z.string().optional(), procedure: z.string().optional() }).parse(req.query);
   assert(!filters.from || !filters.to || filters.from <= filters.to, 400, 'Start date must be before end date.');
-  const [invoices, payments, commissions, sessions, doctors, patients] = await Promise.all(['invoice', 'payment', 'commission', 'treatmentSession', 'doctor', 'patient'].map(model => store.list(model)));
-  res.json(accountsReport({ invoices, payments, commissions, sessions, doctors, patients }, filters, tenant.settings?.timezone || 'Asia/Kolkata'));
+  const [invoices, payments, commissions, sessions, doctors, patients, adjustments] = await Promise.all(['invoice', 'payment', 'commission', 'treatmentSession', 'doctor', 'patient', 'patientAdjustment'].map(model => store.list(model)));
+  res.json(accountsReport({ invoices, payments, commissions, sessions, doctors, patients, adjustments }, filters, tenant.settings?.timezone || 'Asia/Kolkata'));
 }));
 clinicApi.get(
   '/reports',
   run('reports', async (_req: any, res: any, { store, tenant }: any) => {
     const invoices = await store.list('invoice');
-    const payments = await store.list('payment');
+    const payments = (await store.list('payment')).filter((p: any) => p.method !== 'CREDIT');
+    const adjustments = await store.list('patientAdjustment');
     const commissions = await store.list('commission');
     const monthly: Record<string, number> = {};
     for (const p of payments) {
       const m = dateKey(p.createdAt, tenant.settings?.timezone || 'Asia/Kolkata').slice(0, 7);
       monthly[m] = (monthly[m] || 0) + p.amountPaise;
     }
+    for (const e of adjustments.filter((e: any) => e.type === 'REFUND')) {
+      const m = dateKey(e.createdAt, tenant.settings?.timezone || 'Asia/Kolkata').slice(0, 7);
+      monthly[m] = (monthly[m] || 0) + e.amountPaise;
+    }
     res.json({
-      invoicedPaise: invoices.reduce((s: number, i: any) => s + i.totalPaise, 0),
-      collectedPaise: payments.reduce((s: number, p: any) => s + p.amountPaise, 0),
-      outstandingPaise: invoices.reduce((s: number, i: any) => s + i.totalPaise - i.paidPaise, 0),
-      commissionPaise: commissions.reduce((s: number, c: any) => s + c.amountPaise, 0),
+      invoicedPaise: invoices.filter((i: any) => i.status !== 'CANCELLED').reduce((s: number, i: any) => s + i.totalPaise, 0),
+      collectedPaise: payments.reduce((s: number, p: any) => s + p.amountPaise, 0) + adjustments.filter((e: any) => e.type === 'REFUND').reduce((s: number, e: any) => s + e.amountPaise, 0),
+      outstandingPaise: invoices.filter((i: any) => i.status !== 'CANCELLED').reduce((s: number, i: any) => s + i.totalPaise - i.paidPaise, 0),
+      commissionPaise: commissions.filter((c: any) => !['REVERSED', 'RECOVERY_DUE'].includes(c.status)).reduce((s: number, c: any) => s + c.amountPaise, 0),
       monthly,
     });
   }),
@@ -1060,6 +1067,7 @@ clinicApi.get(
       'treatmentSession',
       'invoice',
       'payment',
+      'patientAdjustment',
       'commission',
       'document',
       'prescription',
@@ -1079,6 +1087,7 @@ clinicApi.get(
         'chartVersion',
         'treatmentPlan',
         'invoice',
+        'patientAdjustment',
         'document',
         'prescription',
         'followUp',

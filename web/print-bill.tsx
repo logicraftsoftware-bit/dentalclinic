@@ -14,6 +14,11 @@ export async function printPatientBill(invoice: any, workspace: any, patient: an
       appointment: { id: invoice.id, createdAt: invoice.createdAt, startsAt: invoice.createdAt },
       invoices: [invoice], payments, doctors: [],
     };
+    if (!invoice.appointmentId) {
+      const credit = await api(`/clinic/patient-credits/${invoice.patientId}`);
+      data.adjustments = credit.entries; data.creditBalancePaise = credit.balancePaise;
+      data.payments = credit.payments.filter((p: any) => p.invoiceId === invoice.id);
+    }
     const zone = workspace?.tenant?.settings?.timezone || 'Asia/Kolkata';
     const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')];
     const loaded = styles.map(source => new Promise<void>(resolve => {

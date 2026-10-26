@@ -58,3 +58,26 @@ test('date presets use clinic days, inclusive seven days and clamped calendar mo
   assert.deepEqual(accountDateRange('1month', 'Asia/Kolkata', at('2026-03-31')), { from: '2026-02-28', to: '2026-03-31' });
   assert.equal(accountsReport(fixture(), { period: 'all', from: '2099-01-01' }, 'Asia/Kolkata').totals.collected, 7000);
 });
+
+test('cancellation and refund dates preserve original receipts and reconcile credit and commission recovery', () => {
+  const data: any = fixture();
+  data.invoices[0].status = 'CANCELLED';
+  data.commissions[0].status = 'RECOVERY_DUE'; data.commissions[1].status = 'REVERSED';
+  data.adjustments = [
+    { id: 'c1', invoiceId: 'i1', patientId: 'p1', type: 'CANCEL', amountPaise: 5000, cancelledPaise: 9000, commissionReversalPaise: 2000, paidCommissionRecoveryPaise: 1200, createdAt: at('2026-11-01'), reason: 'Treatment cancelled', actorName: 'Reception' },
+    { id: 'f1', invoiceId: 'i1', patientId: 'p1', sourceId: 'c1', type: 'REFUND', amountPaise: -1500, method: 'BANK', createdAt: at('2026-12-01'), reason: 'Partial refund', actorName: 'Reception' },
+  ];
+  const all = accountsReport(data, {}, 'Asia/Kolkata');
+  assert.equal(all.totals.net, 2000); assert.equal(all.totals.cancelled, 9000);
+  assert.equal(all.totals.collected, 7000); assert.equal(all.totals.refunds, 1500); assert.equal(all.totals.netCash, 5500);
+  assert.equal(all.totals.patientCredit, 3500); assert.equal(all.totals.outstanding, 0);
+  assert.equal(all.totals.commission, 0); assert.equal(all.totals.commissionRecovery, 1200);
+  assert.equal(all.totals.clinic, 2000, 'Refund discharges credit liability, not treatment revenue twice');
+  const cancellationMonth = accountsReport(data, { from: '2026-11-01', to: '2026-11-30' }, 'Asia/Kolkata');
+  assert.equal(cancellationMonth.totals.cancelled, 9000); assert.equal(cancellationMonth.totals.net, -9000);
+  assert.equal(cancellationMonth.totals.commissionReversed, 2000); assert.equal(cancellationMonth.totals.collected, 0);
+  const refundMonth = accountsReport(data, { from: '2026-12-01', to: '2026-12-31' }, 'Asia/Kolkata');
+  assert.equal(refundMonth.totals.refunds, 1500); assert.equal(refundMonth.totals.netCash, -1500); assert.equal(refundMonth.totals.cancelled, 0);
+  assert.equal(refundMonth.activity[0].sourceInvoiceId, 'i1');
+  assert.equal(accountsReport(data, { doctorId: 'd2' }, 'Asia/Kolkata').activity.length, 0);
+});
