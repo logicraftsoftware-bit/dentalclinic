@@ -129,6 +129,17 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
     await search.fill(value);
     await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(4);
   }
+  await page.getByRole('tab', { name: 'Paid', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(4);
+  await page.getByRole('tab', { name: 'Part paid', exact: true }).click();
+  await expect(page.getByText('No invoices match your search.')).toBeVisible();
+  await page.getByRole('tab', { name: 'All invoices', exact: true }).click();
+  await page.screenshot({ path: '.tools/screenshots/billing-payments-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await expect(page.locator('.sidebar')).not.toBeInViewport();
+  await page.screenshot({ path: '.tools/screenshots/billing-payments-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const popupPromise = page.waitForEvent('popup');
   await page.getByRole('button', { name: 'Print bill', exact: true }).first().click();
   const receiptPopup = await popupPromise;
@@ -201,6 +212,12 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await page.emulateMedia({ media: 'screen' });
   await page.request.post('/api/auth/logout', { headers, data: {} });
   await page.request.post('/api/auth/login', { headers, data: { email, password } });
+  await page.goto('/clinic/billing');
+  await page.getByRole('tab', { name: 'Part paid', exact: true }).click();
+  await expect(page.locator('.billing-status.partial')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Filter invoices' }).click();
+  await page.getByLabel('Invoice status', { exact: true }).selectOption('CANCELLED');
+  await expect(page.locator('.billing-status.cancelled')).toHaveCount(2);
   await page.goto('/clinic/accounts');
   await expect(page.getByRole('heading', { name: 'Cancellation, credit & refund audit' })).toBeVisible();
   await expect(page.getByRole('cell', { name: /^Patient postponed restoration/ })).toHaveCount(2);

@@ -11,6 +11,9 @@ import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
+  Printer,
+  Filter,
+  Layers,
   ArrowDownToLine,
   ArrowRight,
   ArrowUpRight,
@@ -44,6 +47,7 @@ import {
 } from 'lucide-react';
 import { api, money, day, initials } from './api';
 import './style.css';
+import './billing-theme.css';
 import '@fontsource/dm-sans/400.css';
 import '@fontsource/dm-sans/500.css';
 import '@fontsource/dm-sans/600.css';
@@ -75,9 +79,9 @@ const clinicNav = [
   ['patients', 'Patients', Users],
   ['appointments', 'Appointments', CalendarDays],
   ['reception', 'Reception', Wallet],
+  ['billing', 'Billing & payments', Wallet],
   ['referrals', 'Internal referrals', ArrowRight],
   ['treatments', 'Treatments', HeartPulse],
-  ['billing', 'Billing & payments', Wallet],
   ['accounts', 'Accounts', CreditCard],
   ['doctors', 'Doctors', Stethoscope],
   ['team', 'Team & branches', Building2],
@@ -185,11 +189,14 @@ function Metric({ label, value, detail, icon: Icon = Users, color = 'mint' }: an
     </div>
   );
 }
-function Logo({ name = 'DentaFlow' }: { name?: string }) {
+function Tooth({ size = 24, ...props }: React.SVGProps<SVGSVGElement> & { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 64 72" fill="none" stroke="currentColor" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M32 12C19 3 7 7 8 23c1 12 6 36 13 39 5 2 6-20 11-20s6 22 11 20c7-3 12-27 13-39C57 7 45 3 32 12Z" /></svg>;
+}
+function Logo({ name = 'DentaFlow', sidebar = false }: { name?: string; sidebar?: boolean }) {
   return (
     <span className="brand">
       <span className="brand-icon">
-        <Smile size={23} />
+        <>{sidebar ? <Tooth size={34} strokeWidth={7} /> : <Smile size={23} />}</>
       </span>
       {name === 'DentaFlow' ? (
         <>
@@ -364,10 +371,10 @@ function App() {
           signedIn={signedIn}
         />
       ) : (
-        <div className="app-shell">
+        <div className={`app-shell screen-${screen}`}>
           {mobile && <div className="scrim" onClick={() => setMobile(false)} />}
           <aside className={`sidebar ${mobile ? 'open' : ''}`}>
-            <Logo />
+            <Logo sidebar />
             <div className="workspace-box">
               <div className="workspace-symbol">
                 {mode === 'clinic' &&
@@ -1147,6 +1154,8 @@ function Billing({ tick, modal, action, go, notify }: any) {
   const [cancellingInvoice, setCancellingInvoice] = useState<any>(null);
   const [creditPatient, setCreditPatient] = useState('');
   const { data: billingTotals } = useData('/clinic/billing-totals', tick);
+  const [invoiceTab, setInvoiceTab] = useState('ALL');
+  const [showFilters, setShowFilters] = useState(false);
   const [billingSearch, setBillingSearch] = useState('');
   const { data, error } = useData('/clinic/invoices', tick);
   const { data: patients } = useData('/clinic/patients', tick);
@@ -1154,12 +1163,13 @@ function Billing({ tick, modal, action, go, notify }: any) {
   const query = billingSearch.trim().toLowerCase();
   const visible = data?.filter((i: any) => {
     const patient = patients?.find((p: any) => p.id === i.patientId);
+    if (invoiceTab !== 'ALL' && (invoiceTab === 'UNPAID' ? !['UNPAID', 'PENDING'].includes(i.status) : i.status !== invoiceTab)) return false;
     return !query || `${patient?.name || ''} ${patient?.phone || ''} ${patient?.id || i.patientId}`.toLowerCase().includes(query);
   });
   return (
-    <>
+    <div className="billing-page"><Tooth className="billing-watermark" aria-hidden="true" strokeWidth={1.2} />
       <PageTitle
-        title="Billing & payments"
+        title="Billing & Payments"
         subtitle="Clear invoices. Flexible installments. Happier patients."
       >
         <button className="primary" onClick={() => invoiceModal(modal, action)}>
@@ -1175,7 +1185,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
           icon={FileText}
         />
         <Metric
-          label="Net collected after refunds"
+          label="Net collected"
           value={money(billingTotals?.collectedPaise)}
           detail={`${billingTotals?.paymentCount || 0} payments · Patient credit ${money(billingTotals?.creditBalancePaise)}`}
           icon={Wallet}
@@ -1185,15 +1195,17 @@ function Billing({ tick, modal, action, go, notify }: any) {
           label="Outstanding"
           value={money(billingTotals?.outstandingPaise)}
           detail="Installments still to be received"
-          icon={CreditCard}
+          icon={Layers}
           color="peach"
         />
       </div>
-      <section className="panel">
+      <section className="panel billing-invoices">
         <div className="panel-heading">
-          <h2>Patient invoices</h2>
-          <label className="billing-search">Search patients<input type="search" aria-label="Search billing by name, phone or UHID" placeholder="Name, phone number or UHID" value={billingSearch} onChange={event => setBillingSearch(event.target.value)} /></label>
+          <h2><FileText size={24} />Patient Invoices</h2>
+          <div className="billing-search-tools"><label className="billing-search"><Search size={19} /><input type="search" aria-label="Search billing by name, phone or UHID" placeholder="Search patients (Name, Phone, UHID)" value={billingSearch} onChange={event => setBillingSearch(event.target.value)} /></label><button className="secondary billing-filter-toggle" aria-label="Filter invoices" aria-expanded={showFilters} onClick={() => setShowFilters(value => !value)}><Filter size={18} /></button></div>
         </div>
+        <div className="billing-tabs" role="tablist" aria-label="Invoice status tabs">{[['ALL', 'All invoices'], ['PAID', 'Paid'], ['PARTIAL', 'Part paid'], ['UNPAID', 'Outstanding']].map(([value, label]) => <button role="tab" aria-selected={invoiceTab === value} key={value} onClick={() => setInvoiceTab(value)}>{label}</button>)}</div>
+        {showFilters && <label className="billing-status-filter">Invoice status<select aria-label="Invoice status" value={invoiceTab} onChange={e => setInvoiceTab(e.target.value)}><option value="ALL">All invoices</option><option value="PAID">Paid</option><option value="PARTIAL">Part paid</option><option value="UNPAID">Outstanding</option><option value="CANCELLED">Cancelled</option></select></label>}
         {!data ? (
           <DataError error={error} />
         ) : !data.length ? (
@@ -1215,19 +1227,19 @@ function Billing({ tick, modal, action, go, notify }: any) {
                 {!visible.length && <tr><td colSpan={6}>No invoices match your search.</td></tr>}
                 {visible.map((i: any) => (
                   <tr key={i.id}>
-                    <td>
+                    <td><div className="billing-patient"><span className="billing-patient-avatar">{initials(patients?.find((p: any) => p.id === i.patientId)?.name || 'Patient').slice(0, 1)}</span><div>
                       <strong>
                         {patients?.find((p: any) => p.id === i.patientId)?.name || 'Patient'}
                       </strong>
-                      <small>{patients?.find((p: any) => p.id === i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>{i.description}</small>
+                      <small>{patients?.find((p: any) => p.id === i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>{i.description}</small></div></div>
                     </td>
                     <td>{money(i.totalPaise)}</td>
                     <td>{money(i.paidPaise)}</td>
                     <td>{i.status === 'CANCELLED' ? money(0) : money(i.totalPaise - i.paidPaise)}</td>
                     <td>
-                      <Badge value={i.status} />
+                      <span className={`billing-status ${i.status.toLowerCase()}`}>{i.status !== 'CANCELLED' && <Check size={14} />}{i.status === 'UNPAID' || i.status === 'PENDING' ? 'Outstanding' : statuses[i.status] || i.status}</span>
                     </td>
-                    <td>
+                    <td><div className="billing-row-actions">
                       {i.appointmentId && <button className="secondary small" onClick={() => go(`/clinic/reception/billing/${i.appointmentId}`)}>Open billing</button>}
                       {!i.appointmentId && !['PAID', 'CANCELLED'].includes(i.status) && (
                         <button
@@ -1248,11 +1260,12 @@ function Billing({ tick, modal, action, go, notify }: any) {
                           ).catch((error: Error) => notify(error.message, 'error'))
                         }
                       >
-                        <FileText size={15} />
+                        <Printer size={15} />
                         Print bill
                       </button>
                       <button className="text-button" onClick={() => setCreditPatient(i.patientId)}>Credit / refund</button>{!i.appointmentId && i.status !== 'CANCELLED' && <button className="text-button" onClick={() => setCancellingInvoice(i)}>Cancel procedure</button>}
-                    </td>
+                      <details className="billing-more"><summary aria-label="More invoice actions"><MoreHorizontal size={18} /></summary><div><button type="button" onClick={() => navigator.clipboard.writeText(i.id).then(() => notify('Invoice number copied')).catch(() => notify('Unable to copy invoice number'))}>Copy invoice ID</button></div></details>
+                    </div></td>
                   </tr>
                 ))}
               </tbody>
@@ -1260,7 +1273,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
           </div>
         )}
       </section>
-      <section className="panel section-gap">
+      <section className="panel section-gap billing-receipts">
         <div className="panel-heading">
           <h2>Payment receipts</h2>
         </div>
@@ -1298,7 +1311,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
       </section>
     {creditPatient && <div className="modal-backdrop"><section className="modal adjustment-dialog" role="dialog" aria-modal="true" aria-label="Patient credit"><div className="panel-heading"><h2>Patient credit</h2><button className="secondary small" onClick={() => setCreditPatient('')}>Close</button></div><PatientCreditPanel patientId={creditPatient} invoices={(data || []).filter((i: any) => i.patientId === creditPatient)} tick={tick} action={action} /></section></div>}
     {cancellingInvoice && <AdjustmentDialog type="CANCEL" patientId={cancellingInvoice.patientId} procedure={{ name: cancellingInvoice.description, paid: cancellingInvoice.paidPaise, invoiceIds: [cancellingInvoice.id] }} action={action} close={() => setCancellingInvoice(null)} onSaved={() => {}} />}
-    </>
+    </div>
   );
 }
 let currentWorkspace: any = null;
