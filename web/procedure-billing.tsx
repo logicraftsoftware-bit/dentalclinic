@@ -12,6 +12,7 @@ const paise = (s: string) => Math.round(Number(s || 0) * 100);
 export function BillingDesk({ appointmentId, action, tick, close, zone, workspace }: any) {
   const [data, setData] = useState<any>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]), [entries, setEntries] = useState<Record<string, Entry>>({});
+  const [paymentMode, setPaymentMode] = useState('CASH'), [paymentReference, setPaymentReference] = useState('');
   const [checkoutKey, setCheckoutKey] = useState(() => crypto.randomUUID());
   useEffect(() => { let active = true; api(`/clinic/reception/${appointmentId}`).then(value => { if (active) { setData(value); setError(''); } }).catch(e => { if (active) setError(e.message); }); return () => { active = false; }; }, [appointmentId, tick]);
   function editEntry(key: string, patch: Partial<Entry>) { setEntries(old => ({ ...old, [key]: { ...emptyEntry, ...old[key], ...patch } })); }
@@ -32,6 +33,22 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
   const totals = rows.reduce((t, r) => { const e = entries[r.key] || emptyEntry; return { gross: t.gross + r.gross, discount: t.discount + r.discount + paise(e.discount), net: t.net + r.net - paise(e.discount), paid: t.paid + r.paid, collect: t.collect + paise(e.collect) }; }, { gross: 0, discount: 0, net: 0, paid: 0, collect: 0 });
   const changed = drafts.length > 0 || rows.some(r => r.kind === 'fee' || paise((entries[r.key] || emptyEntry).discount) || paise((entries[r.key] || emptyEntry).collect));
   const doctors = new Map(data.doctors.map((d: any) => [d.id, d.name]));
+  function updatePaymentDetails(patch: Partial<Entry>) {
+    setEntries(old => Object.fromEntries(rows.map(r => [r.key, { ...emptyEntry, ...old[r.key], ...patch }])));
+  }
+  function allocatePayment(value: string) {
+    setEntries(old => {
+      let remaining = paise(value);
+      return Object.fromEntries(rows.map((r, index) => {
+      const entry = { ...emptyEntry, ...old[r.key], method: paymentMode, reference: paymentReference };
+      const due = Math.max(0, r.net - r.paid - paise(entry.discount));
+      // Preserve excess on the last row so validation prevents overpayment.
+      const amount = index === rows.length - 1 ? remaining : Math.min(remaining, due);
+      remaining -= amount;
+      return [r.key, { ...entry, collect: amount ? String(amount / 100) : '' }];
+      }));
+    });
+  }
   async function save(event: React.FormEvent) {
     event.preventDefault(); if (busy || invalid) return;
     setBusy(true); setError('');
@@ -47,6 +64,27 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
     <header className="reception-bill-header"><div><h2>{data.patient.name}</h2><p>{data.patient.phone} · {new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium' }).format(new Date(appointment.startsAt))}</p></div><div className="procedure-toolbar"><button className="secondary small" disabled={!data.invoices.length} onClick={() => window.print()}>Print saved bill</button><button className="secondary icon-button" disabled={busy} aria-label="Close billing desk" onClick={close}><X size={17} /></button></div></header>
     {error && <p className="error-banner" role="alert">{error}</p>}
     <form onSubmit={save}><fieldset className="reception-procedures" disabled={busy || blocked}>
+      <div className="procedure-totals" aria-label="Bill summary">
+        <div className="procedure-summary-heading"><span>Bill summary</span><small>{rows.length} {rows.length === 1 ? 'procedure' : 'procedures'}</small></div>
+        <dl className="procedure-summary-breakdown">
+          <div><dt>Gross amount</dt><dd>{money(totals.gross)}</dd></div>
+          <div><dt>Discount</dt><dd>{money(totals.discount)}</dd></div>
+          <div className="procedure-summary-net"><dt>Net amount</dt><dd>{money(totals.net)}</dd></div>
+          <div><dt>Already paid</dt><dd>{money(totals.paid)}</dd></div>
+        </dl>
+        <div className="procedure-collect-controls">
+          <label>Collect payment amount<input type="number" min="0" max={Math.max(0, totals.net - totals.paid) / 100} step="0.01" aria-label="Collect payment amount" placeholder="0" value={totals.collect ? String(totals.collect / 100) : ''} onChange={event => allocatePayment(event.target.value)} /></label>
+          <label>Payment mode<select aria-label="Payment mode" value={paymentMode} onChange={event => { setPaymentMode(event.target.value); updatePaymentDetails({ method: event.target.value }); }}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method}</option>)}</select></label>
+          <label>Payment reference<input maxLength={200} aria-label="Payment reference" placeholder="Optional reference" value={paymentReference} onChange={event => { setPaymentReference(event.target.value); updatePaymentDetails({ reference: event.target.value }); }} /></label>
+          <button type="button" className="secondary small" disabled={totals.net <= totals.paid} onClick={() => allocatePayment(String((totals.net - totals.paid) / 100))}>Collect full balance</button>
+          <small>Payment is allocated to unpaid procedures in the order shown below. You can adjust each procedure separately.</small>
+        </div>
+        <div className="procedure-summary-checkout">
+          <dl className="procedure-summary-payment"><div><dt>Collecting now</dt><dd>{money(totals.collect)}</dd></div><div className="procedure-summary-balance"><dt>Remaining balance</dt><dd>{money(totals.net - totals.paid - totals.collect)}</dd></div></dl>
+          <button className="primary" disabled={invalid || !changed} aria-busy={busy}>{busy ? 'Saving...' : totals.collect > 0 ? 'Collect payment' : 'Save bill changes'}</button>
+        </div>
+      </div>
+
       <div className="reception-section-heading"><div><h3>Procedure-wise billing</h3><p>Enter each procedure’s discount and collection separately. Paid amounts show saved receipts.</p></div><button type="button" className="secondary small" disabled={drafts.length >= 50} onClick={() => setDrafts(old => [...old, { key: crypto.randomUUID(), name: '', doctorId: appointment.doctorId, charge: '', lab: '' }])}><Plus size={15} />Add procedure</button></div>
       <datalist id="procedure-charge-master">{data.charges.map((c: any) => <option key={c.id} value={c.name} />)}</datalist>
       <div className="table-wrap"><table className="procedure-entry-table"><thead><tr><th>#</th><th>Procedure / Doctor</th><th>Charge / Lab ₹</th><th>Discount ₹<small>Additional</small></th><th>Net ₹</th><th>Paid ₹</th><th>Collect ₹</th><th>Method / Reference</th><th>Balance ₹</th><th aria-label="Remove procedure"></th></tr></thead><tbody>{rows.map((r, index) => {
@@ -61,19 +99,6 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
           <td><select aria-label={`Payment method ${index + 1}`} value={e.method} onChange={event => editEntry(r.key, { method: event.target.value })}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method}</option>)}</select><input maxLength={200} aria-label={`Payment reference ${index + 1}`} placeholder="Reference" value={e.reference} onChange={event => editEntry(r.key, { reference: event.target.value })} />{r.paid > 0 && <small>Paid by {r.methods}</small>}</td><td className={due - collect < 0 ? 'procedure-error' : ''}>{money(due - collect)}</td><td>{r.kind === 'draft' && <button type="button" className="text-button" aria-label={`Remove procedure ${index + 1}`} onClick={() => setDrafts(old => old.filter(d => d.key !== r.draft.key))}><Trash2 size={15} /></button>}</td></tr>;
       })}</tbody></table></div>
       {invalid && <p role="alert" className="error-banner">A procedure discount or collection exceeds that procedure’s unpaid balance.</p>}
-      <div className="procedure-totals" aria-label="Bill summary">
-        <div className="procedure-summary-heading"><span>Bill summary</span><small>{rows.length} {rows.length === 1 ? 'procedure' : 'procedures'}</small></div>
-        <dl className="procedure-summary-breakdown">
-          <div><dt>Gross amount</dt><dd>{money(totals.gross)}</dd></div>
-          <div><dt>Discount</dt><dd>{money(totals.discount)}</dd></div>
-          <div className="procedure-summary-net"><dt>Net amount</dt><dd>{money(totals.net)}</dd></div>
-          <div><dt>Already paid</dt><dd>{money(totals.paid)}</dd></div>
-        </dl>
-        <div className="procedure-summary-checkout">
-          <dl className="procedure-summary-payment"><div><dt>Collecting now</dt><dd>{money(totals.collect)}</dd></div><div className="procedure-summary-balance"><dt>Remaining balance</dt><dd>{money(totals.net - totals.paid - totals.collect)}</dd></div></dl>
-          <button className="primary" disabled={invalid || !changed} aria-busy={busy}>{busy ? 'Saving...' : 'Save procedure payments'}</button>
-        </div>
-      </div>
     </fieldset></form>
     {blocked && <p>This appointment is {appointment.status.toLowerCase()}. Mark the patient present before billing.</p>}
     <details className="procedure-history"><summary>Payment history ({collections.length} collections)</summary><div className="table-wrap"><table><thead><tr><th>Procedure</th><th>Date</th><th>Method</th><th>Reference</th><th>Collected</th></tr></thead><tbody>{collections.map((p: any) => <tr key={p.id}><td>{p.name}</td><td>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.createdAt))}</td><td>{p.method}</td><td>{p.reference || '—'}</td><td>{money(p.amountPaise)}</td></tr>)}</tbody></table></div></details>

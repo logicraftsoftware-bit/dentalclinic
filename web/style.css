@@ -3894,3 +3894,8 @@ td .text-button {
 
 .dental-field-error { display: block; color: #a33224; font-weight: 500; }
 .dental-visit [aria-invalid="true"] { border-color: #bd4939; }
+
+.procedure-billing .procedure-totals { margin-top: 0; margin-bottom: 24px; }
+.procedure-collect-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 18px 22px; border-top: 1px solid #dce9e3; }
+.procedure-collect-controls label { display: grid; gap: 6px; flex: 1 1 180px; color: #637b73; font-size: 12px; }
+.procedure-collect-controls > small { flex-basis: 100%; color: #637b73; }
