@@ -101,7 +101,7 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await page.getByLabel('Collect 3', { exact: true }).fill('200');
   await page.getByLabel('Payment method 3', { exact: true }).selectOption('CARD');
   await page.screenshot({ path: '.tools/screenshots/reception-billing-desktop.png', fullPage: true });
-  await page.getByRole('button', { name: 'Save procedure payments', exact: true }).click();
+  await page.getByRole('button', { name: 'Collect payment', exact: true }).click();
   const restoration = page.locator('tr[data-procedure="Restoration"]');
   const scaling = page.locator('tr[data-procedure="Scaling"]');
   await expect(restoration).toContainText('Saved discount: ₹100');
@@ -115,7 +115,7 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await restoration.getByLabel(/^Payment method/).selectOption('BANK');
   await scaling.getByRole('button', { name: /^Collect balance/ }).click();
   await scaling.getByLabel(/^Payment method/).selectOption('CASH');
-  await page.getByRole('button', { name: 'Save procedure payments', exact: true }).click();
+  await page.getByRole('button', { name: 'Collect payment', exact: true }).click();
   await expect(remainingBalance).toHaveText('₹0');
   await page.reload();
   await expect(restoration).toContainText('Paid by BANK, UPI');
