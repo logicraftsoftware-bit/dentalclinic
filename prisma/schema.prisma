@@ -8,6 +8,7 @@ datasource db {
 model User {
   id String @id @default(uuid()) @map("_id")
   email String @unique
+  username String?
   name String
   passwordHash String
   verified Boolean @default(false)
@@ -63,6 +64,7 @@ model Membership {
   allDoctorBranches Boolean @default(false)
   doctorId String?
   role String @default("OWNER")
+  permissions Json?
   active Boolean @default(true)
   user User @relation(fields: [userId], references: [id])
   tenant Tenant @relation(fields: [tenantId], references: [id])

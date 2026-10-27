@@ -16,6 +16,14 @@ test('clinical and platform privileges are distinct; unknown roles deny by defau
   assert.equal(permission('DOCTOR', 'clinical'), true);
   assert.equal(permission('DOCTOR', 'settings'), false);
 });
+test('staff permission overrides revoke role access without privilege escalation', () => {
+  assert.equal(permission('RECEPTIONIST', 'billing', { billing: false }), false);
+  assert.equal(permission('RECEPTIONIST', 'clinical', { clinical: true }), false);
+  assert.equal(permission('ACCOUNTANT', 'reports', { reports: false }), false);
+  assert.equal(permission('ACCOUNTANT', 'staff', { staff: true }), false);
+  assert.equal(permission('OWNER', 'staff', { staff: false }), true);
+  assert.equal(permission('RECEPTIONIST', 'dashboard', { dashboard: false }), true);
+});
 test('trial expiry, paid grace and suspension are enforced at request time', () => {
   const now = new Date('2026-10-13T12:00:00Z');
   const sub = {

@@ -8,6 +8,7 @@ import { AppointmentCreate } from './appointment-create';
 import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
 import { ClinicMasters } from './masters';
 import { Accounts } from './accounts';
+import { roleGrants, staffPermission } from '../shared/staff-permissions';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -539,6 +540,7 @@ function App() {
               (mode === 'clinic' &&
                 workspace &&
                 (!can(workspace, screenCaps[screen] || 'dashboard') ||
+                  (screen === 'reception' && !can(workspace, 'appointments')) ||
                   (route.patientId && !can(workspace, patientCapability)))) ? (
                 <section className="panel panel-body">
                   <h1>Access restricted</h1>
@@ -551,7 +553,7 @@ function App() {
               ) : route.patientId && patient ? (
                 <PatientDetail patient={patient} back={() => setPatient(null)} {...common} />
               ) : screen === 'dashboard' ? (
-                workspace?.role === 'RECEPTIONIST' ? <Reception {...common} /> : <Dashboard {...common} navigate={navigate} name={me.name} />
+                workspace?.role === 'RECEPTIONIST' && can(workspace, 'appointments') && can(workspace, 'billing') ? <Reception {...common} /> : <Dashboard {...common} navigate={navigate} name={me.name} />
               ) : screen === 'reception' ? (
                 <Reception {...common} />
               ) : screen === 'patients' ? (
@@ -1037,7 +1039,7 @@ function appointmentModal(_modal: any, _action: any, patientId?: string) {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 async function invoiceModal(modal: any, action: any, patientId?: string) {
-  const patients = await options('patients');
+  const patients = await options('billing-patients');
   modal({
     title: 'Create a patient invoice',
     subtitle: 'Amounts are in rupees. Patient payments are separate from your subscription.',
@@ -1555,6 +1557,8 @@ function Doctors({ tick, modal, action, notify, workspace }: any) {
   );
 }
 function Team({ tick, modal, action, workspace }: any) {
+  const owner = workspace?.role === 'OWNER';
+  const capabilityLabels: Record<string, string> = { patients: 'Patient records', appointments: 'Appointments & reception attendance', clinical: 'Clinical records & treatments', documents: 'Patient documents', catalog: 'Charge catalogue', billing: 'Billing & collections', reports: 'Accounts & reports', commissions: 'Doctor commission payouts', staff: 'Team management', doctors: 'Doctor management', settings: 'Clinic settings & subscription' };
   const deleteEntry = (url: string, message: string) => {
     if (window.confirm(message)) action(() => api(url, 'DELETE')).catch(() => {});
   };
@@ -1610,10 +1614,11 @@ function Team({ tick, modal, action, workspace }: any) {
           onClick={() =>
             modal({
               title: 'Create a staff account',
-              subtitle: 'The team member can sign in immediately with their email and password.',
+              subtitle: 'Staff can sign in immediately using their email or optional username. Access follows their selected role and branch.',
               fields: [
                 { key: 'name', label: 'Name', required: true },
                 { key: 'email', label: 'Email', type: 'email', required: true },
+                { key: 'username', label: 'Username (optional)', hint: '3–40 letters, numbers, dots, underscores or hyphens.' },
                 {
                   key: 'password',
                   label: 'Initial password (12+ characters)',
@@ -1622,7 +1627,7 @@ function Team({ tick, modal, action, workspace }: any) {
                 },
                 ...assignmentFields(),
               ],
-              submit: (d: any) => action(() => api('/clinic/staff', 'POST', d)),
+              submit: ({ username, ...d }: any) => action(() => api('/clinic/staff', 'POST', { ...d, ...(username?.trim() ? { username: username.trim() } : {}) })),
             })
           }
         >
@@ -1642,9 +1647,10 @@ function Team({ tick, modal, action, workspace }: any) {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Email</th>
+                  <th>Email / username</th>
                   <th>Role / branch</th>
                   <th>Status</th>
+                  <th>Permissions</th>
                   <th>Access</th>
                 </tr>
               </thead>
@@ -1654,7 +1660,7 @@ function Team({ tick, modal, action, workspace }: any) {
                     <td>
                       <strong>{s.user.name}</strong>
                     </td>
-                    <td>{s.user.email}</td>
+                    <td>{s.user.email}{s.user.username && <small className="staff-username">@{s.user.username}</small>}</td>
                     <td>
                       {s.role.replaceAll('_', ' ')}
                       <small style={{ display: 'block' }}>
@@ -1662,14 +1668,33 @@ function Team({ tick, modal, action, workspace }: any) {
                       </small>
                     </td>
                     <td>{s.active ? 'Active' : 'Inactive'}</td>
+                    <td><small className="staff-permission-summary">{s.role === 'OWNER' ? 'Full clinic access' : (roleGrants[s.role] || []).filter(key => key !== 'dashboard' && staffPermission(s.role, key, s.permissions)).map(key => capabilityLabels[key]).join(', ') || 'Dashboard only'}</small></td>
                     <td>
                       {s.role === 'OWNER' ? (
                         <Badge value="ACTIVE" />
                       ) : (
                         <>
+                          {owner && <>
+                            <button className="secondary small" onClick={() => modal({
+                              title: 'Edit staff login', subtitle: 'Change this staff member’s name and login details. Leave the password blank to keep it. Saving signs them out.',
+                              fields: [
+                                { key: 'name', label: 'Name', required: true, value: s.user.name },
+                                { key: 'email', label: 'Email', type: 'email', required: true, value: s.user.email },
+                                { key: 'username', label: 'Username (optional)', value: s.user.username || '', hint: '3–40 letters, numbers, dots, underscores or hyphens.' },
+                                { key: 'password', label: 'New password (12+ characters)', type: 'password', hint: 'Leave blank to keep the current password.' },
+                              ],
+                              submit: ({ username, password, ...details }: any) => action(() => api(`/clinic/staff/${s.id}`, 'PATCH', { ...details, username: username?.trim() || null, ...(password ? { password } : {}) })),
+                            })}>Edit login</button>
+                            <button className="secondary small" onClick={() => modal({
+                              title: 'Edit staff permissions', subtitle: `${s.user.name} · ${s.role.replaceAll('_', ' ')}. Turn off modules this person should not access. Change their role to use a different set of permissions. Branch restrictions always apply.`,
+                              fields: (roleGrants[s.role] || []).filter(key => key !== 'dashboard').map(key => ({ key, label: capabilityLabels[key], type: 'checkbox', value: staffPermission(s.role, key, s.permissions) })),
+                              submit: (permissions: any) => action(() => api(`/clinic/staff/${s.id}`, 'PATCH', { permissions })),
+                            })}>Permissions</button>
+                            <button className="text-button" onClick={() => action(() => api(`/clinic/staff/${s.id}`, 'PATCH', { permissions: null })).catch(() => {})}>Reset permissions</button>
+                          </>}
                           <button
                             className="secondary small"
-                            disabled={!branches || !doctors}
+                            disabled={!branches || !doctors || (!owner && !restricted)}
                             onClick={() =>
                               modal({
                                 title: 'Edit staff access',
@@ -1689,6 +1714,7 @@ function Team({ tick, modal, action, workspace }: any) {
                           </button>
                           <button
                             className="secondary small"
+                            disabled={!owner && !restricted}
                             onClick={() =>
                               action(() =>
                                 api(`/clinic/staff/${s.id}`, 'PATCH', { active: !s.active }),
@@ -4454,8 +4480,8 @@ function PublicSite({ plans, settings, screen, setScreen, signedIn }: any) {
               )}
               {['login', 'signup', 'forgot'].includes(screen) && (
                 <label>
-                  Email address
-                  <input name="email" type="email" required autoComplete="email" />
+                  {screen === 'login' ? 'Email address or username' : 'Email address'}
+                  <input name="email" type={screen === 'login' ? 'text' : 'email'} required autoComplete={screen === 'login' ? 'username' : 'email'} />
                 </label>
               )}
               {screen === 'signup' && (

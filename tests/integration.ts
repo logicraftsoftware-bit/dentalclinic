@@ -775,6 +775,48 @@ test('staff accounts sign in and use their membership without email verification
   assert.equal((await request('/clinic/patients', 'GET', undefined, login.cookie)).status, 200);
 });
 
+test('owner manages staff identity, password and permissions while staff cannot escalate', async () => {
+  const clinic = await register('Staff control clinic');
+  await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { overrides: { staff: null } } });
+  const username = `reception-${randomUUID().slice(0, 8)}`;
+  const email = `${randomUUID()}@example.test`;
+  const created = await request('/clinic/staff', 'POST', { name: 'Reception', email, username, role: 'RECEPTIONIST', password }, clinic.cookie);
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const staffId = created.data.id;
+  const login = await request('/auth/login', 'POST', { email: username.toUpperCase(), password });
+  assert.equal(login.status, 200);
+  assert.equal((await request('/clinic/staff', 'GET', undefined, login.cookie)).status, 403);
+  assert.equal((await request(`/clinic/staff/${staffId}`, 'PATCH', { permissions: { settings: true } }, login.cookie)).status, 403);
+  assert.equal((await request(`/clinic/staff/${staffId}`, 'PATCH', { name: 'Foreign edit' }, b.cookie)).status, 403);
+  const newUsername = `desk-${randomUUID().slice(0, 8)}`, newEmail = `${randomUUID()}@example.test`, newPassword = 'Replacement-Password-12345';
+  const edited = await request(`/clinic/staff/${staffId}`, 'PATCH', { name: 'Front desk', email: newEmail, username: newUsername, password: newPassword, permissions: { billing: false, appointments: false } }, clinic.cookie);
+  assert.equal(edited.status, 200, JSON.stringify(edited.data));
+  assert.equal((await request('/auth/me', 'GET', undefined, login.cookie)).status, 401);
+  assert.equal((await request('/auth/login', 'POST', { email, password })).status, 401);
+  assert.equal((await request('/auth/login', 'POST', { email: username, password })).status, 401);
+  const fresh = await request('/auth/login', 'POST', { email: newUsername, password: newPassword });
+  assert.equal(fresh.status, 200);
+  assert.equal((await request('/clinic/invoices', 'GET', undefined, fresh.cookie)).status, 403);
+  const workspace = await request('/clinic/workspace', 'GET', undefined, fresh.cookie);
+  assert.equal(workspace.data.capabilities.includes('billing'), false);
+  assert.deepEqual((await request('/clinic/overview', 'GET', undefined, fresh.cookie)).data.appointments, []);
+  assert.equal((await request('/clinic/patients', 'GET', undefined, fresh.cookie)).status, 200);
+  assert.equal((await request(`/clinic/staff/${staffId}`, 'PATCH', { permissions: null }, clinic.cookie)).status, 200);
+  const duplicate = await request('/clinic/staff', 'POST', { name: 'Duplicate', email: `${randomUUID()}@example.test`, username: newUsername, password, role: 'ACCOUNTANT' }, clinic.cookie);
+  assert.equal(duplicate.status, 409);
+  const accountant = await request('/clinic/staff', 'POST', { name: 'Accounts', email: `${randomUUID()}@example.test`, password, role: 'ACCOUNTANT' }, clinic.cookie);
+  assert.equal(accountant.status, 201);
+  const accountantUser = await db.user.findUniqueOrThrow({ where: { id: accountant.data.userId } });
+  const accountLogin = await request('/auth/login', 'POST', { email: accountantUser.email, password });
+  assert.equal((await request('/clinic/patients', 'GET', undefined, accountLogin.cookie)).status, 403);
+  assert.equal((await request('/clinic/billing-patients', 'GET', undefined, accountLogin.cookie)).status, 200);
+  assert.equal((await request('/clinic/accounts', 'GET', undefined, accountLogin.cookie)).status, 200);
+  const list = await request('/clinic/staff', 'GET', undefined, clinic.cookie);
+  const updated = list.data.find((s: any) => s.id === staffId);
+  assert.equal(updated.user.name, 'Front desk'); assert.equal(updated.user.username, newUsername);
+  assert.equal(JSON.stringify(list.data).includes('passwordHash'), false);
+});
+
 test('team deletion protects owners and linked branches and revokes removed staff sessions', async () => {
   const branch = await db.branch.create({ data: { tenantId: a.tenantId, name: 'Deletion test branch' } });
   const user = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: 'Removed staff', passwordHash: await bcrypt.hash(password, 12) } });

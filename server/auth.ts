@@ -139,13 +139,13 @@ auth.post(
 auth.post(
   '/login',
   wrap(async (req: any, res: any) => {
-    const input = z.object({ email, password: z.string().max(128) }).parse(req.body);
-    const user = await db.user.findUnique({ where: { email: input.email } });
+    const input = z.object({ email: z.string().trim().min(1).max(254).transform(s => s.toLowerCase()), password: z.string().max(128) }).parse(req.body);
+    const user = input.email.includes('@') ? await db.user.findUnique({ where: { email: input.email } }) : await db.user.findFirst({ where: { username: input.email } });
     const valid = await bcrypt.compare(
       input.password,
       user?.passwordHash || '$2b$12$mEZsINPRgkd/6rFmcVKnhOF16lxWI7VEIKKsDBBpmJnzWdqs.VBr.',
     );
-    assert(user && valid, 401, 'Email or password is incorrect.');
+    assert(user && valid, 401, 'Email, username or password is incorrect.');
     const member = await db.membership.findFirst({
       where: { userId: user.id, active: true },
       orderBy: { id: 'asc' },

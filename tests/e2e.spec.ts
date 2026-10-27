@@ -537,6 +537,7 @@ test('staff creation selects branch and each role opens its permitted panel', as
     { role: 'BRANCH_ADMIN', email: adminEmail, panel: 'Branch admin panel' },
     { role: 'RECEPTIONIST', email: `${randomUUID()}@example.test`, panel: 'Receptionist panel' },
     { role: 'DOCTOR', email: `${randomUUID()}@example.test`, panel: 'Doctor panel' },
+    { role: 'ACCOUNTANT', email: `${randomUUID()}@example.test`, panel: 'Accountant panel' },
   ];
   for (const login of logins.slice(1)) {
     const result = await page.request.post('/api/clinic/staff', {
@@ -552,6 +553,20 @@ test('staff creation selects branch and each role opens its permitted panel', as
     });
     expect(result.status()).toBe(201);
   }
+  await page.reload();
+  const receptionistRow = page.locator('tbody tr').filter({ hasText: logins[1].email });
+  await receptionistRow.getByRole('button', { name: 'Edit login', exact: true }).click();
+  const username = `desk-${randomUUID().slice(0, 8)}`;
+  await dialog.getByLabel('Name', { exact: true }).fill('Front desk staff');
+  await dialog.getByLabel('Username (optional)', { exact: true }).fill(username);
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await expect(receptionistRow).toContainText(`@${username}`);
+  await receptionistRow.getByRole('button', { name: 'Permissions', exact: true }).click();
+  await dialog.getByLabel('Charge catalogue', { exact: true }).uncheck();
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await expect(receptionistRow.locator('.staff-permission-summary')).not.toContainText('Charge catalogue');
+  await receptionistRow.getByRole('button', { name: 'Reset permissions', exact: true }).click();
+  await expect(receptionistRow.locator('.staff-permission-summary')).toContainText('Charge catalogue');
   for (const login of logins) {
     await page.request.post('/api/auth/logout', { headers });
     const result = await page.request.post('/api/auth/login', {
@@ -562,7 +577,7 @@ test('staff creation selects branch and each role opens its permitted panel', as
     await page.goto('/');
     await expect(page.getByRole('heading', { name: login.panel, exact: true })).toBeVisible();
     const nav = page.locator('.sidebar nav');
-    await expect(nav.getByRole('button', { name: 'Appointments', exact: true })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Appointments', exact: true })).toHaveCount(login.role === 'ACCOUNTANT' ? 0 : 1);
     await expect(
       page.locator('.nav-bottom').getByRole('button', { name: 'Settings', exact: true }),
     ).toHaveCount(0);
@@ -573,7 +588,7 @@ test('staff creation selects branch and each role opens its permitted panel', as
       login.role === 'DOCTOR' ? 0 : 1,
     );
     await expect(nav.getByRole('button', { name: 'Treatments', exact: true })).toHaveCount(
-      login.role === 'RECEPTIONIST' ? 0 : 1,
+      ['RECEPTIONIST', 'ACCOUNTANT'].includes(login.role) ? 0 : 1,
     );
     await page.screenshot({
       path: `.tools/screenshots/${login.role.toLowerCase()}-panel.png`,
@@ -612,7 +627,7 @@ test('shared named URLs survive sign-in, refresh and browser history', async ({ 
   await page.goto(shared);
   await expect(page).toHaveURL(new RegExp('/login\\?next='));
   await expect(page).toHaveTitle('Log in | DentaFlow');
-  await page.getByLabel('Email address', { exact: true }).fill(email);
+  await page.getByLabel('Email address or username', { exact: true }).fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in to your workspace', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(shared + '$'));

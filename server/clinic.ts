@@ -24,6 +24,7 @@ import {
   opaque,
   hash,
   type OwnedModel,
+  lock,
 } from './core.js';
 import { transactionalReply } from './reply.js';
 import { zonedDayRange, dateKey, midnight } from './time.js';
@@ -253,15 +254,15 @@ clinicApi.get(
     'dashboard',
     async (_req: any, res: any, { store, tenant, subscription, membership }: any) => {
       const [patients, doctors, appointments, invoices, followups] = await Promise.all([
-        store.count('patient', { archived: false }),
+        permission(membership.role, 'patients', membership.permissions) ? store.count('patient', { archived: false }) : Promise.resolve(0),
         store.list('doctor', { active: true }),
-        store.list(
+        permission(membership.role, 'appointments', membership.permissions) ? store.list(
           'appointment',
           { startsAt: zonedDayRange(new Date(), tenant.settings?.timezone || 'Asia/Kolkata') },
           { orderBy: { startsAt: 'asc' } },
-        ),
-        permissionFinancial(membership.role) ? store.list('invoice') : Promise.resolve([]),
-        ['OWNER', 'MANAGER', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST'].includes(membership.role)
+        ) : Promise.resolve([]),
+        permission(membership.role, 'billing', membership.permissions) || permission(membership.role, 'reports', membership.permissions) ? store.list('invoice') : Promise.resolve([]),
+        permission(membership.role, 'patients', membership.permissions)
           ? store.list('followUp', { status: 'OPEN' }, { orderBy: { dueAt: 'asc' }, take: 5 })
           : Promise.resolve([]),
       ]);
@@ -294,9 +295,6 @@ clinicApi.get(
     },
   ),
 );
-function permissionFinancial(role: string) {
-  return ['OWNER', 'MANAGER', 'BRANCH_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST'].includes(role);
-}
 clinicApi.get(
   '/workspace',
   run(
@@ -321,7 +319,7 @@ clinicApi.get(
           'staff',
           'doctors',
           'settings',
-        ].filter((c) => permission(membership.role, c)),
+        ].filter((c) => permission(membership.role, c, membership.permissions)),
       }),
     true,
   ),
@@ -402,6 +400,9 @@ async function prepareMasterData(resource: string, data: any, store: any, old?: 
 registerDentalRoutes(clinicApi, run, validateSlot);
 registerReceptionRoutes(clinicApi, run);
 registerPatientAdjustmentRoutes(clinicApi, run);
+clinicApi.get('/billing-patients', run('billing', async (_req: any, res: any, { store }: any) => {
+  res.json(await store.list('patient', { archived: false }, { select: { id: true, name: true, phone: true }, orderBy: { name: 'asc' } }));
+}));
 // A bounded calendar range returns every matching visit, without the generic 500-row limit.
 clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res: any, { store, tenant }: any) => {
   const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -782,6 +783,8 @@ clinicApi.post(
   }),
 );
 const staffRoles = z.enum(['MANAGER', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT']);
+const staffUsername = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9._-]{2,39}$/, 'Use 3–40 letters, numbers, dots, underscores or hyphens.');
+const staffPermissions = z.record(z.enum(['patients', 'appointments', 'clinical', 'documents', 'catalog', 'billing', 'reports', 'commissions', 'staff', 'doctors', 'settings']), z.boolean()).nullable().optional();
 async function staffAssignment(data: any, ctx: any, actor: any, old?: any) {
   const { membership, tx, tenant, store } = ctx;
   const role = data.role ?? old?.role;
@@ -849,7 +852,8 @@ clinicApi.get(
           branchId: true,
           doctorId: true,
           active: true,
-          user: { select: { id: true, name: true, email: true, verified: true } },
+          permissions: true,
+          user: { select: { id: true, name: true, email: true, username: true, verified: true } },
         },
       }),
     );
@@ -870,10 +874,15 @@ clinicApi.post(
         branchId: id.nullable().optional(),
         doctorId: id.nullable().optional(),
         password: z.string().min(12).max(128),
+        username: staffUsername.optional(),
+        permissions: staffPermissions,
       })
       .strict()
       .parse(req.body);
     const assignment = await staffAssignment(data, ctx, actor);
+    assert(data.permissions === undefined || ctx.membership.role === 'OWNER', 403, 'Only the clinic owner can customize permissions.');
+    await lock(tx, 'staff-login-identities');
+    if (data.username) assert(!(await tx.user.findFirst({ where: { username: data.username } })), 409, 'Username is already in use.');
     checkLimit(
       effectiveLimits(subscription).staff,
       await tx.membership.count({
@@ -890,10 +899,11 @@ clinicApi.post(
         name: data.name,
         email: data.email,
         passwordHash: await bcrypt.hash(data.password, 12),
+        username: data.username,
       },
     });
     const row = await tx.membership.create({
-      data: { userId: user.id, tenantId: tenant.id, ...assignment },
+      data: { userId: user.id, tenantId: tenant.id, ...assignment, ...(data.permissions ? { permissions: data.permissions } : {}) },
     });
     await store.audit(actor.userId, 'staff.created', row.id);
     res.status(201).json(row);
@@ -909,6 +919,11 @@ clinicApi.patch(
         branchId: id.nullable().optional(),
         doctorId: id.nullable().optional(),
         active: z.boolean().optional(),
+        name: text.optional(),
+        email: z.string().trim().email().transform(s => s.toLowerCase()).optional(),
+        username: staffUsername.nullable().optional(),
+        password: z.string().min(12).max(128).optional(),
+        permissions: staffPermissions,
       })
       .strict()
       .parse(req.body);
@@ -917,6 +932,17 @@ clinicApi.patch(
     });
     assert(old && old.role !== 'OWNER', 403, 'Cannot alter the owner membership.');
     const assignment = await staffAssignment(data, ctx, actor, old);
+    const credentialsChanged = ['name', 'email', 'username', 'password'].some(key => data[key as keyof typeof data] !== undefined);
+    assert((!credentialsChanged && data.permissions === undefined) || ctx.membership.role === 'OWNER', 403, 'Only the clinic owner can edit login details or custom permissions.');
+    if (credentialsChanged) {
+      await lock(tx, 'staff-login-identities');
+      const target = await tx.user.findUnique({ where: { id: old.userId } });
+      assert(target && !target.platformAdmin && await tx.membership.count({ where: { userId: old.userId } }) === 1, 403, 'Shared or platform accounts must manage their own login details.');
+      if (data.email) assert(!(await tx.user.findFirst({ where: { email: data.email, id: { not: old.userId } } })), 409, 'Email is already in use.');
+      if (data.username) assert(!(await tx.user.findFirst({ where: { username: data.username, id: { not: old.userId } } })), 409, 'Username is already in use.');
+      await tx.user.update({ where: { id: old.userId }, data: { ...(data.name !== undefined ? { name: data.name } : {}), ...(data.email !== undefined ? { email: data.email, verified: false } : {}), ...(data.username !== undefined ? { username: data.username } : {}), ...(data.password ? { passwordHash: await bcrypt.hash(data.password, 12) } : {}) } });
+      await tx.authToken.deleteMany({ where: { userId: old.userId } });
+    }
     if (data.active && !old.active)
       checkLimit(
         effectiveLimits(subscription).staff,
@@ -926,9 +952,9 @@ clinicApi.patch(
       );
     const row = await tx.membership.update({
       where: { id: old.id },
-      data: { ...assignment, ...(data.active !== undefined ? { active: data.active } : {}) },
+      data: { ...assignment, ...(data.active !== undefined ? { active: data.active } : {}), ...(data.permissions !== undefined ? { permissions: data.permissions ?? {} } : data.role && data.role !== old.role ? { permissions: {} } : {}) },
     });
-    await tx.session.deleteMany({ where: { userId: old.userId, tenantId: tenant.id } });
+    await tx.session.deleteMany({ where: { userId: old.userId, ...(credentialsChanged ? {} : { tenantId: tenant.id }) } });
     await store.audit(actor.userId, 'staff.updated', row.id);
     res.json(row);
   }),

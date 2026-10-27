@@ -3,18 +3,18 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { BillReceipt } from './bill-receipt';
 import { api } from './api';
 
-export async function printPatientBill(invoice: any, workspace: any, patient: any, payments: any[] = []) {
+export async function printPatientBill(invoice: any, workspace: any, patient: any, payments: any[] = [], receiptData?: any) {
   const popup = window.open('', '_blank');
   if (!popup) throw new Error('Allow pop-ups to print the bill.');
   popup.document.title = 'Patient bill';
   popup.document.body.textContent = 'Preparing bill...';
   try {
-    const data = invoice.appointmentId ? await api(`/clinic/reception/${invoice.appointmentId}`) : {
+    const data = receiptData || (invoice.appointmentId ? await api(`/clinic/reception/${invoice.appointmentId}`) : {
       patient: patient || { id: invoice.patientId, name: 'Patient' },
       appointment: { id: invoice.id, createdAt: invoice.createdAt, startsAt: invoice.createdAt },
       invoices: [invoice], payments, doctors: [],
-    };
-    if (!invoice.appointmentId) {
+    });
+    if (!receiptData && !invoice.appointmentId) {
       const credit = await api(`/clinic/patient-credits/${invoice.patientId}`);
       data.adjustments = credit.entries; data.creditBalancePaise = credit.balancePaise;
       data.payments = credit.payments.filter((p: any) => p.invoiceId === invoice.id);

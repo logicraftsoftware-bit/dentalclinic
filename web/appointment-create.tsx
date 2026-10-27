@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, money } from './api';
+import { CheckCircle2, Printer } from 'lucide-react';
+import { printPatientBill } from './print-bill';
 
 export function AppointmentCreate({ go, action, workspace }: any) {
   const [mode, setMode] = useState('existing');
@@ -30,6 +32,8 @@ export function AppointmentCreate({ go, action, workspace }: any) {
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmation, setConfirmation] = useState<any>(null);
+  const [printing, setPrinting] = useState(false);
   const doctor = doctors.find(d => d.id === doctorId);
   useEffect(() => {
     let active = true;
@@ -63,15 +67,37 @@ export function AppointmentCreate({ go, action, workspace }: any) {
         // Keep the created patient selected if scheduling fails, so retrying cannot create a duplicate.
         setPatient(selected); setQuery(selected.name); setMode('existing');
       }
-      await action(() => api('/clinic/appointments', 'POST', {
+      const appointment = await action(() => api('/clinic/appointments', 'POST', {
         patientId: selected.id, ...(doctorId ? { doctorId } : {}), ...(branchId ? { branchId } : {}),
         startsAt: new Date(`${date}T${time}`).toISOString(), durationMinutes: 30,
         useClinicFee: clinicFee, chargeConsultantFee: Boolean(doctor) && consultantFee, chargeVisitingFee: Boolean(doctor) && visitingFee, notes: notes.trim(),
       }), 'Appointment created');
-      go('/clinic/appointments');
+      setConfirmation({ appointment, patient: selected, doctor, branch: branches.find(b => b.id === appointment.branchId) });
+      window.scrollTo(0, 0);
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   }
   const matches = doctors.filter(d => d.name.toLowerCase().includes(doctorQuery.trim().toLowerCase()));
+  if (confirmation) {
+    const { appointment, patient: bookedPatient, doctor: bookedDoctor, branch } = confirmation;
+    const zone = workspace?.tenant?.settings?.timezone || 'Asia/Kolkata';
+    const fees = [['Clinic fee', appointment.clinicFeePaise], ['Consultant fee', appointment.consultationPaise], ['Visiting consultant fee', appointment.visitingConsultationPaise]].filter(([, value]) => Number(value) > 0);
+    const total = fees.reduce((sum, [, value]) => sum + Number(value), 0);
+    async function print() {
+      setPrinting(true); setError('');
+      try {
+        // Appointment fees are billed at reception. Print the selected charges without creating invoices or payments.
+        const invoices = fees.map(([description, value], index) => ({ id: `${appointment.id}-fee-${index}`, appointmentId: appointment.id, description, chargeKind: 'VISIT', doctorId: description === 'Clinic fee' ? undefined : appointment.doctorId, totalPaise: Number(value), paidPaise: 0, discountPaise: 0, status: 'PENDING', createdAt: appointment.createdAt }));
+        await printPatientBill({}, workspace, bookedPatient, [], { appointment, patient: bookedPatient, invoices, payments: [], doctors: bookedDoctor ? [bookedDoctor] : [] });
+      } catch (e: any) { setError(e.message); } finally { setPrinting(false); }
+    }
+    return <section className="panel appointment-create appointment-thank-you">
+      <div className="appointment-confirmation-heading"><CheckCircle2 size={52} aria-hidden="true" /><h1>Thank you!</h1><p>Your appointment has been created successfully.</p></div>
+      {error && <p role="alert" className="appointment-error">{error}</p>}
+      <dl className="appointment-confirmation-details"><dt>Patient</dt><dd>{bookedPatient.name}</dd><dt>Phone</dt><dd>{bookedPatient.phone || '—'}</dd><dt>Appointment</dt><dd>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'long', timeStyle: 'short' }).format(new Date(appointment.startsAt))}</dd><dt>Doctor</dt><dd>{bookedDoctor?.name || 'Unassigned'}</dd><dt>Branch</dt><dd>{branch?.name || 'Unassigned'}</dd></dl>
+      <fieldset><legend>Appointment fees</legend>{fees.map(([label, value]) => <p className="appointment-confirmation-fee" key={label}><span>{label}</span><strong>{money(Number(value))}</strong></p>)}{!fees.length && <p>No appointment fees selected.</p>}<p className="appointment-confirmation-fee"><strong>Total payable</strong><strong>{money(total)}</strong></p>{total > 0 && <p>Payment pending. Payments can be collected at reception.</p>}</fieldset>
+      <div className="appointment-actions"><button type="button" className="secondary" onClick={() => go('/clinic/appointments')}>Back to appointments</button><button type="button" className="primary" disabled={printing} onClick={print}><Printer size={18} />{printing ? 'Preparing bill...' : 'Print bill'}</button></div>
+    </section>;
+  }
   return <section className="panel appointment-create">
     <div className="page-heading"><div><h1>Create appointment</h1><p>Select the patient, optional doctor and visit details.</p></div><button type="button" className="secondary" onClick={() => go('/clinic/appointments')}>Back to appointments</button></div>
     {error && <p role="alert" className="appointment-error">{error}</p>}

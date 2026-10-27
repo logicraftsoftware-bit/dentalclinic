@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import pino from 'pino';
 import { z } from 'zod';
 import { doctorAvailableAt, doctorBranches } from './doctor-branches.js';
+import { staffPermission } from '../shared/staff-permissions.js';
 
 const globalDb = globalThis as unknown as { dentaflowDb?: PrismaClient };
 function databaseOptions() {
@@ -87,27 +88,8 @@ export async function authenticate(req: Request): Promise<Actor> {
     email: session.user.email,
   };
 }
-export function permission(role: string, capability: string) {
-  if (role === 'OWNER' || role === 'MANAGER') return true;
-  const grants: Record<string, string[]> = {
-    BRANCH_ADMIN: [
-      'dashboard',
-      'patients',
-      'appointments',
-      'billing',
-      'clinical',
-      'documents',
-      'catalog',
-      'reports',
-      'commissions',
-      'staff',
-      'doctors',
-    ],
-    DOCTOR: ['dashboard', 'patients', 'appointments', 'clinical', 'documents', 'catalog'],
-    RECEPTIONIST: ['dashboard', 'patients', 'appointments', 'billing', 'catalog'],
-    ACCOUNTANT: ['dashboard', 'billing', 'reports', 'commissions'],
-  };
-  return grants[role]?.includes(capability) ?? false;
+export function permission(role: string, capability: string, overrides?: unknown) {
+  return staffPermission(role, capability, overrides);
 }
 export function operational(
   tenant: { status: string },
@@ -433,7 +415,7 @@ export async function clinic<T>(
       });
       assert(membership?.active, 403, 'No active membership in this clinic.');
       assert(
-        permission(membership.role, capability),
+        permission(membership.role, capability, membership.permissions),
         403,
         'Your role does not permit this operation.',
       );

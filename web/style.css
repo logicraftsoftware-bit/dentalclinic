@@ -3488,6 +3488,14 @@ td .text-button {
 }
 
 .appointment-create { max-width: 1000px; padding: 28px; margin: 0 auto; }
+.appointment-confirmation-heading { text-align: center; padding: 20px 0 28px; }
+.appointment-confirmation-heading svg { color: #287c6e; margin-bottom: 12px; }
+.appointment-confirmation-heading h1 { margin-bottom: 8px; }
+.appointment-confirmation-details { display: grid; grid-template-columns: minmax(90px, 1fr) 2fr; gap: 14px 20px; padding: 22px; background: #f3f8f5; border-radius: 12px; margin: 0 0 24px; }
+.appointment-confirmation-details dt { color: #526b64; }
+.appointment-confirmation-details dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.appointment-confirmation-fee { display: flex; justify-content: space-between; gap: 16px; }
+.appointment-thank-you .appointment-actions { flex-wrap: wrap; }
 .appointment-create .page-heading { display: flex; justify-content: space-between; gap: 20px; align-items: start; margin-bottom: 28px; }
 .appointment-create fieldset { border: 1px solid #dce6e1; border-radius: 12px; padding: 22px; margin: 0 0 24px; min-width: 0; }
 .appointment-create legend { font-weight: 700; padding: 0 8px; }
@@ -3618,6 +3626,8 @@ td .text-button {
 .procedure-summary-balance dd { color: #23483f; font-size: 20px; font-weight: 600; }
 .procedure-summary-checkout .primary { min-height: 46px; flex-shrink: 0; border-radius: 9px; padding: 12px 22px; }
 .procedure-summary-checkout .primary:disabled { cursor: default; }
+.staff-username { display: block; color: #637b73; margin-top: 5px; }
+.staff-permission-summary { display: block; max-width: 250px; min-width: 140px; line-height: 1.6; color: #637b73; }
 .accounts-page { display: grid; gap: 22px; }
 .accounts-title, .accounts-report-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .accounts-title h1 { font-size: 28px; letter-spacing: -.8px; }
