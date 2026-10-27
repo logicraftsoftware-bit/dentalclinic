@@ -1,7 +1,7 @@
 import { patientAge } from '../shared/patient-age';
 import { billingLines, procedureCollections } from './billing-lines';
 import React from 'react';
-import { FileText, Mail, Phone } from 'lucide-react';
+import { FileText, Mail } from 'lucide-react';
 
 const amount = (paise: number) => new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(paise / 100);
 
@@ -36,7 +36,6 @@ export function BillReceipt({ data, workspace, zone }: any) {
         <div><h1>{branchName}</h1>{branchAddress && <p className="receipt-branch-address">{branchAddress}</p>}</div>
       </div>
       <div className="receipt-contact">
-        {clinic.phone && <p><Phone />{clinic.phone}</p>}
         {settings.contactEmail && <p><Mail />{settings.contactEmail}</p>}
       </div>
     </header>
