@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, money } from './api';
+import { api, clearApiReads, money } from './api';
 
 type MasterKind = 'specialities' | 'charge-groups' | 'charges';
 const labels: Record<MasterKind, string> = {
@@ -16,9 +16,15 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
+  const [groupId, setGroupId] = useState('');
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState('');
-  useEffect(() => setPage(1), [kind, query, status]);
+  useEffect(() => setPage(1), [kind, query, status, groupId]);
+  const refresh = () => {
+    clearApiReads();
+    setQuery(''); setStatus('all'); setGroupId('');
+    setRetry(value => value + 1);
+  };
   useEffect(() => {
     let active = true;
     setError('');
@@ -35,7 +41,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
     return () => {
       active = false;
     };
-  }, [tick, retry]);
+  }, [tick, retry, kind]);
   const groups = data?.['charge-groups'] || [];
   const canManage = ['OWNER', 'MANAGER'].includes(workspace?.role);
   const removeCharge = async (row: any) => {
@@ -106,7 +112,8 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
     const group = groups.find((group) => group.id === row.chargeGroupId)?.name || '';
     return (
       `${row.name} ${group}`.toLowerCase().includes(query.toLowerCase()) &&
-      (status === 'all' || row.active === (status === 'active'))
+      (status === 'all' || row.active === (status === 'active')) &&
+      (kind !== 'charges' || !groupId || row.chargeGroupId === groupId)
     );
   });
   const pageSize = 10;
@@ -169,6 +176,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
                 : 'Deactivate unused entries to remove them from new selections.'}
             </p>
           </div>
+          <button className="secondary small" type="button" onClick={refresh}>Refresh masters</button>
         </div>
         <div className="panel-body form-fields">
           <label>
@@ -180,6 +188,13 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
+          {kind === 'charges' && <label>
+            Charge group
+            <select aria-label="Filter by charge group" value={groupId} onChange={event => setGroupId(event.target.value)}>
+              <option value="">All charge groups</option>
+              {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+            </select>
+          </label>}
           <label>
             Status filter
             <select

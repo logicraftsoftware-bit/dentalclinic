@@ -775,6 +775,19 @@ test('charge master delete confirms before removal and retains other masters', a
   await page.getByRole('tab', { name: 'Charge group master', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'Preserved charge group', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Charge master', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Keep this charge', exact: true })).toBeVisible();
+  // An import in another session must appear when the already-open master is refreshed.
+  const importedGroupResponse = await page.request.post('/api/clinic/charge-groups', { headers, data: { name: 'Orthodontic' } });
+  expect(importedGroupResponse.status()).toBe(201);
+  const importedGroup = await importedGroupResponse.json();
+  expect((await page.request.post('/api/clinic/charges', { headers, data: { name: 'Conventional Metal Braces', chargeGroupId: importedGroup.id, pricePaise: 5500000 } })).status()).toBe(201);
+  await page.getByLabel('Search masters', { exact: true }).fill('No match');
+  await page.getByRole('button', { name: 'Refresh masters', exact: true }).click();
+  await expect(page.getByLabel('Search masters', { exact: true })).toHaveValue('');
+  await page.getByRole('combobox', { name: 'Filter by charge group', exact: true }).selectOption(importedGroup.id);
+  await expect(page.getByRole('cell', { name: 'Conventional Metal Braces', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Keep this charge', exact: true })).toHaveCount(0);
 });
 
 test('patient registration collects age gender and address from appointments and the patient directory', async ({ page }) => {
