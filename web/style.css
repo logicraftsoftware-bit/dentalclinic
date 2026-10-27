@@ -1186,6 +1186,8 @@ td .text-button {
   font-size: 12px;
 }
 .branch-row p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 10px;
   color: #95a18e;
   margin-top: 4px;

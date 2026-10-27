@@ -1749,7 +1749,7 @@ function Team({ tick, modal, action, workspace }: any) {
                   title: 'Add a branch',
                   fields: [
                     { key: 'name', label: 'Branch name', required: true },
-                    { key: 'address', label: 'Address' },
+                    { key: 'address', label: 'Address', type: 'textarea', hint: 'Enter the address and any additional branch information on separate lines.' },
                   ],
                   submit: (d: any) => action(() => api('/clinic/branches', 'POST', d)),
                 })
@@ -1775,7 +1775,7 @@ function Team({ tick, modal, action, workspace }: any) {
                 title: 'Edit branch',
                 fields: [
                   { key: 'name', label: 'Branch name', required: true, value: b.name },
-                  { key: 'address', label: 'Address', value: b.address || '' },
+                  { key: 'address', label: 'Address', type: 'textarea', value: b.address || '', hint: 'Enter the address and any additional branch information on separate lines.' },
                 ],
                 submit: (details: any) => action(() => api(`/clinic/branches/${b.id}`, 'PATCH', details), 'Branch updated'),
               })}>Edit</button>
