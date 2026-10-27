@@ -24,7 +24,9 @@ test('appointment fee checkboxes work independently and a clinic-only visit need
   expect((await page.request.post('/api/auth/register',{headers,data:{clinicName:'Fee checkbox clinic',name:'Owner',email,password,phone:'9876543210',planId:plans.find((p:any)=>p.name==='Enterprise').id,acceptTerms:true}})).status()).toBe(201);
   await page.request.post('/api/auth/login',{headers,data:{email,password}});
   async function create(resource:string,data:any){const result=await page.request.post(`/api/clinic/${resource}`,{headers,data});expect(result.status()).toBe(201);return result.json();}
-  await create('patients',{name:'Checkbox Patient',phone:'9000098765'});
+  const homeBranch = await create('branches', { name: 'Patient registration branch' });
+  const visitBranch = await create('branches', { name: 'Selected appointment branch' });
+  await create('patients',{name:'Checkbox Patient',phone:'9000098765',branchId:homeBranch.id});
   await create('doctors',{name:'Dr Checkbox',consultationPaise:45000,visitingConsultationPaise:90000});
   await page.goto('/clinic/appointments/new');
   const clinic=page.getByRole('checkbox',{name:/^Clinic fee/});
@@ -45,9 +47,17 @@ test('appointment fee checkboxes work independently and a clinic-only visit need
   await expect(consultant).toHaveCount(0);await expect(clinic).toBeChecked();
   const date=new Date(Date.now()+86400000).toISOString().slice(0,10);
   await page.getByLabel(/^Date/).fill(date);await page.getByLabel(/^Time/).fill('10:00');
+  const branchField = page.getByRole('combobox', { name: 'Branch *', exact: true });
+  await expect(branchField).toHaveAttribute('required', '');
+  await page.getByRole('button',{name:'Create appointment',exact:true}).click();
+  expect(await branchField.evaluate((element: HTMLSelectElement) => element.validity.valueMissing)).toBe(true);
+  await expect(page.getByRole('heading', { name: 'Create appointment', exact: true })).toBeVisible();
+  await branchField.selectOption(visitBranch.id);
   const response=page.waitForResponse(r=>r.url().endsWith('/api/clinic/appointments')&&r.request().method()==='POST');
   await page.getByRole('button',{name:'Create appointment',exact:true}).click();
   const result=await response;expect(result.status()).toBe(201);const saved=await result.json();
+  expect(saved.branchId).toBe(visitBranch.id);
+  await expect(page.locator('.appointment-confirmation-details')).toContainText('Selected appointment branch');
   expect(saved.doctorId).toBeNull();expect(saved.clinicFeePaise).toBe(30000);expect(saved.consultationPaise).toBe(0);
   await page.goto(`/clinic/appointments/${date}/unassigned`);
   await expect(page.getByRole('heading',{name:'Unassigned appointments'})).toBeVisible();
@@ -330,6 +340,9 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByLabel(/^Password/).fill(password);
   await page.getByRole('button', { name: 'Sign in to your workspace' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome back, Aditi' })).toBeVisible();
+  const bookingBranchResponse = await page.request.post('/api/clinic/branches', { headers: { Origin: 'http://localhost:5173' }, data: { name: 'Sunrise main branch' } });
+  expect(bookingBranchResponse.status()).toBe(201);
+  const bookingBranch = await bookingBranchResponse.json();
   await page.locator('.sidebar nav').getByRole('button', { name: 'Masters', exact: true }).click();
   await page.getByRole('button', { name: 'Add speciality', exact: true }).click();
   let masterDialog = page.getByRole('dialog');
@@ -435,6 +448,7 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByLabel('Date', { exact: false }).fill(local);
   await page.getByLabel(/^Time/).fill('10:00');
   await page.getByLabel('Notes (optional)').fill('Morning consultation');
+  await page.getByRole('combobox', { name: 'Branch *', exact: true }).selectOption(bookingBranch.id);
   await page.getByRole('button', { name: 'Create appointment', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Thank you!', exact: true })).toBeVisible();
   await expect(page.locator('.appointment-confirmation-details')).toContainText('Ananya Das');
@@ -769,6 +783,9 @@ test('patient registration collects age gender and address from appointments and
   const plans = await (await page.request.get('/api/public/plans')).json();
   expect((await page.request.post('/api/auth/register', { headers, data: { clinicName: 'Patient demographics browser clinic', name: 'Owner', email, password, phone: '9876543210', planId: plans.find((p: any) => p.name === 'Enterprise').id, acceptTerms: true } })).status()).toBe(201);
   await page.request.post('/api/auth/login', { headers, data: { email, password } });
+  const branchResponse = await page.request.post('/api/clinic/branches', { headers, data: { name: 'Demographics branch' } });
+  expect(branchResponse.status()).toBe(201);
+  const demographicsBranch = await branchResponse.json();
   await page.goto('/clinic/appointments/new');
   await page.getByRole('radio', { name: 'New patient', exact: true }).check();
   await page.getByLabel('Full name').fill('Appointment demographics patient');
@@ -776,6 +793,7 @@ test('patient registration collects age gender and address from appointments and
   await page.getByLabel('Age (years)', { exact: true }).fill('27');
   await page.getByLabel('Gender', { exact: true }).selectOption('Female');
   await page.getByLabel('Address', { exact: true }).fill('GS Road, Guwahati');
+  await page.getByRole('combobox', { name: 'Branch *', exact: true }).selectOption(demographicsBranch.id);
   await page.getByRole('checkbox', { name: /^Clinic fee/ }).check();
   await page.getByLabel(/^Date/).fill(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
   await page.getByLabel(/^Time/).fill('10:00');

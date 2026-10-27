@@ -1456,6 +1456,37 @@ test('branch admins delegate staff safely and branch/doctor panels isolate recor
   );
 });
 
+test('patients can book at another branch and only receiving branch staff gain access', async () => {
+  const clinic = await register('Cross-branch booking clinic');
+  await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { overrides: { branches: null, staff: null } } });
+  async function create(resource: string, body: any) {
+    const result = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie);
+    assert.equal(result.status, 201, JSON.stringify(result.data)); return result.data;
+  }
+  const home = await create('branches', { name: 'Registration branch' });
+  const target = await create('branches', { name: 'Visit branch' });
+  const other = await create('branches', { name: 'Unrelated branch' });
+  const patient = await create('patients', { name: 'Travelling patient', phone: '9000077711', branchId: home.id });
+  const untouched = await create('patients', { name: 'Other home patient', phone: '9000077712', branchId: home.id });
+  async function receptionist(branchId: string) {
+    const email = `${randomUUID()}@example.test`;
+    await create('staff', { name: 'Reception', role: 'RECEPTIONIST', branchId, email, password });
+    return (await request('/auth/login', 'POST', { email, password })).cookie;
+  }
+  const targetCookie = await receptionist(target.id), otherCookie = await receptionist(other.id);
+  assert.equal((await request(`/clinic/patients/${patient.id}`, 'GET', undefined, targetCookie)).status, 404);
+  const appointment = await create('appointments', { patientId: patient.id, branchId: target.id, startsAt: new Date(Date.now() + 86400000).toISOString(), useClinicFee: true });
+  assert.equal(appointment.branchId, target.id);
+  assert.equal((await request(`/clinic/patients/${patient.id}`, 'GET', undefined, clinic.cookie)).data.branchId, home.id);
+  assert.equal((await request(`/clinic/patients/${patient.id}`, 'GET', undefined, targetCookie)).status, 200);
+  assert.equal((await request(`/clinic/reception/${appointment.id}`, 'GET', undefined, targetCookie)).status, 200);
+  assert.equal((await request(`/clinic/patients/${untouched.id}`, 'GET', undefined, targetCookie)).status, 404);
+  assert.equal((await request(`/clinic/reception/${appointment.id}`, 'GET', undefined, otherCookie)).status, 404);
+  assert.equal((await request('/clinic/appointments', 'POST', { patientId: patient.id, branchId: home.id, startsAt: new Date(Date.now() + 2 * 86400000).toISOString() }, targetCookie)).status, 404);
+  const foreignBranch = await db.branch.create({ data: { tenantId: b.tenantId, name: 'Foreign branch' } });
+  assert.equal((await request('/clinic/appointments', 'POST', { patientId: patient.id, branchId: foreignBranch.id, startsAt: new Date(Date.now() + 3 * 86400000).toISOString() }, clinic.cookie)).status, 404);
+});
+
 test('appointment fees are independently selectable and appointments can omit a doctor', async () => {
   const clinic = await register('Independent appointment fees clinic');
   const patient = (await request('/clinic/patients', 'POST', { name: 'Optional doctor patient', phone: '9000012345' }, clinic.cookie)).data;

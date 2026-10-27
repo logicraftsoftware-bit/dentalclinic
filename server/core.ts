@@ -174,11 +174,12 @@ export class TenantStore {
             select: { id: true },
           })
         ).map((r: any) => r.id);
-      // Only explicit referral handoffs can share a patient across branches.
-      const sharedIds = branchId ? (doctorId
+      // A scheduled visit or referral shares the patient with the receiving branch.
+      const visitPatients = branchId ? await this.model('appointment').findMany({ where: { tenantId: this.tenantId, branchId, ...(doctorId ? { doctorId } : {}) }, select: { patientId: true } }) : [];
+      const referralPatients = branchId ? (doctorId
         ? await this.model('appointment').findMany({ where: { tenantId: this.tenantId, branchId, doctorId, referralId: { not: null } }, select: { patientId: true } })
         : await this.model('internalReferral').findMany({ where: { tenantId: this.tenantId, targetBranchId: branchId }, select: { patientId: true } })) : [];
-      const patientWhere: any = branchId ? { OR: [{ branchId }, { id: { in: sharedIds.map((r: any) => r.patientId) } }] } : {};
+      const patientWhere: any = branchId ? { OR: [{ branchId }, { id: { in: [...visitPatients, ...referralPatients].map((r: any) => r.patientId) } }] } : {};
       if (doctorId) {
         const appointments = await this.model('appointment').findMany({
           where: { tenantId: this.tenantId, doctorId },
@@ -338,14 +339,6 @@ export class TenantStore {
         'Assigned doctor must belong to the patient branch.',
       );
       if (!data.branchId && doctor.branchId) data.branchId = doctor.branchId;
-    }
-    if (name === 'appointment' && data.patientId) {
-      const patient = await this.get('patient', data.patientId as string);
-      assert(
-        !patient.branchId || patient.branchId === data.branchId || !!(data.referralId && (await this.model('internalReferral').findFirst({ where: { id: data.referralId, tenantId: this.tenantId, patientId: data.patientId, toDoctorId: data.doctorId, targetBranchId: data.branchId || null, status: data.id ? 'SCHEDULED' : 'PENDING', ...(data.id ? { scheduledAppointmentId: data.id } : {}) } }))),
-        400,
-        'Appointment must belong to the patient branch.',
-      );
     }
     for (const [field, value] of Object.entries(data)) {
       const jsonField =
