@@ -436,6 +436,17 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByLabel(/^Time/).fill('10:00');
   await page.getByLabel('Notes (optional)').fill('Morning consultation');
   await page.getByRole('button', { name: 'Create appointment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Thank you!', exact: true })).toBeVisible();
+  await expect(page.locator('.appointment-confirmation-details')).toContainText('Ananya Das');
+  await expect(page.locator('.appointment-confirmation-details')).toContainText('Dr. Aditi Sharma');
+  const billPopup = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Print bill', exact: true }).click();
+  const bill = await billPopup;
+  await expect(bill.locator('.reception-receipt')).toContainText('Ananya Das');
+  await expect(bill.locator('.reception-receipt')).toContainText('Clinic fee');
+  await expect(bill.locator('.reception-receipt')).toContainText('Visiting consultant fee');
+  await bill.close();
+  await page.getByRole('button', { name: 'Back to appointments', exact: true }).click();
   await expect(page).toHaveURL(/\/clinic\/appointments$/);
   await page.getByRole('button', { name: local + ', 1 appointment', exact: true }).click();
   await expect(page).toHaveURL(new RegExp('/clinic/appointments/' + local));

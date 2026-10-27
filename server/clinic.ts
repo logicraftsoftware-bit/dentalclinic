@@ -784,7 +784,7 @@ clinicApi.post(
 );
 const staffRoles = z.enum(['MANAGER', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT']);
 const staffUsername = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9._-]{2,39}$/, 'Use 3–40 letters, numbers, dots, underscores or hyphens.');
-const staffPermissions = z.record(z.enum(['patients', 'appointments', 'clinical', 'documents', 'catalog', 'billing', 'reports', 'commissions', 'staff', 'doctors', 'settings']), z.boolean()).nullable().optional();
+const staffPermissions = z.partialRecord(z.enum(['patients', 'appointments', 'clinical', 'documents', 'catalog', 'billing', 'reports', 'commissions', 'staff', 'doctors', 'settings']), z.boolean()).nullable().optional();
 async function staffAssignment(data: any, ctx: any, actor: any, old?: any) {
   const { membership, tx, tenant, store } = ctx;
   const role = data.role ?? old?.role;
