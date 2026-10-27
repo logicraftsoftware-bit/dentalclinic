@@ -75,12 +75,13 @@ export function registerPatientAdjustmentRoutes(router: Router, run: any) {
   router.get('/patient-adjustments', run('billing', async (_req: any, res: any, { store }: any) => {
     res.json(await store.list('patientAdjustment', {}, { orderBy: { createdAt: 'desc' } }));
   }));
-  router.get('/patient-credits/:id', run('billing', async (req: any, res: any, { store }: any) => {
+  router.get('/patient-credits/:id', run('billing', async (req: any, res: any, { store, tx, tenant }: any) => {
     const patient = await store.get('patient', id.parse(req.params.id));
     const entries = await store.list('patientAdjustment', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } });
     const invoices = await store.list('invoice', { patientId: patient.id });
     const payments = invoices.length ? await store.list('payment', { invoiceId: { in: invoices.map((i: any) => i.id) } }) : [];
-    res.json({ patient, entries, invoices, payments, balancePaise: creditBalance(entries) });
+    const branch = patient.branchId ? await tx.branch.findFirst({ where: { id: patient.branchId, tenantId: tenant.id }, select: { id: true, name: true, address: true } }) : null;
+    res.json({ patient, branch, entries, invoices, payments, balancePaise: creditBalance(entries) });
   }));
   router.post('/procedure-cancellations', run('billing', async (req: any, res: any, ctx: any, actor: any) => {
     const input = z.object({ ...base, invoiceIds }).strict().parse(req.body);

@@ -16,6 +16,7 @@ export async function printPatientBill(invoice: any, workspace: any, patient: an
     });
     if (!receiptData && !invoice.appointmentId) {
       const credit = await api(`/clinic/patient-credits/${invoice.patientId}`);
+      data.patient = credit.patient; data.branch = credit.branch;
       data.adjustments = credit.entries; data.creditBalancePaise = credit.balancePaise;
       data.payments = credit.payments.filter((p: any) => p.invoiceId === invoice.id);
     }

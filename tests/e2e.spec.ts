@@ -74,7 +74,7 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await page.request.post('/api/auth/login', { headers, data: { email, password } });
   async function create(resource: string, data: any) { const r = await page.request.post(`/api/clinic/${resource}`, { headers, data }); expect(r.status()).toBe(201); return r.json(); }
   expect((await page.request.patch('/api/clinic/settings', { headers, data: { name: 'Medicity Guwahati Dental Clinic', phone: '9127539374', settings: { address: '123, GS Road, Guwahati - 781001, Assam', contactEmail: 'medicitydental@gmail.com', website: 'https://www.medicitydental.com', tagline: 'Your Oral Health, Our Priority' } } })).status()).toBe(200);
-  const branch = await create('branches', { name: 'Reception branch' });
+  const branch = await create('branches', { name: 'Reception branch', address: 'GS Road, Guwahati\nDental care and orthodontics\nOpen Monday to Saturday' });
   const first = await create('doctors', { name: 'Dr Reception One', branchId: branch.id });
   const second = await create('doctors', { name: 'Dr Reception Two', branchId: branch.id });
   const patient = await create('patients', { name: 'Reception billing patient', phone: '9000011223', branchId: branch.id });
@@ -153,6 +153,9 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   const popupPromise = page.waitForEvent('popup');
   await page.getByRole('button', { name: 'Print bill', exact: true }).first().click();
   const receiptPopup = await popupPromise;
+  await expect(receiptPopup.locator('.receipt-brand h1')).toHaveText('Reception branch');
+  await expect(receiptPopup.locator('.receipt-branch-address')).toHaveText('GS Road, Guwahati\nDental care and orthodontics\nOpen Monday to Saturday');
+  await expect(receiptPopup.locator('.receipt-branch-address')).toHaveCSS('white-space', 'pre-wrap');
   await expect(receiptPopup.locator('.receipt-procedure-table')).toContainText('Restoration');
   await expect(receiptPopup.locator('.receipt-procedure-table')).toContainText('Scaling');
   await receiptPopup.close();
@@ -160,6 +163,8 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await expect(page).toHaveURL(new RegExp('/clinic/reception/billing/' + appointment.id));
   await expect(page.getByLabel('Bill summary')).toBeVisible();
   await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.receipt-brand h1')).toHaveText('Reception branch');
+  await expect(page.locator('.receipt-branch-address')).toContainText('Dental care and orthodontics');
   await expect(page.locator('.receipt-summary')).toContainText('Total Discount₹150.00');
   await expect(page.locator('.receipt-summary')).toContainText('Net Payable₹1,850.00');
   await expect(page.locator('.receipt-procedure-table')).toContainText('BANK, UPI');

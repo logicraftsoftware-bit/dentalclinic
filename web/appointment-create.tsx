@@ -88,7 +88,7 @@ export function AppointmentCreate({ go, action, workspace }: any) {
       try {
         // Appointment fees are billed at reception. Print the selected charges without creating invoices or payments.
         const invoices = fees.map(([description, value], index) => ({ id: `${appointment.id}-fee-${index}`, appointmentId: appointment.id, description, chargeKind: 'VISIT', doctorId: description === 'Clinic fee' ? undefined : appointment.doctorId, totalPaise: Number(value), paidPaise: 0, discountPaise: 0, status: 'PENDING', createdAt: appointment.createdAt }));
-        await printPatientBill({}, workspace, bookedPatient, [], { appointment, patient: bookedPatient, invoices, payments: [], doctors: bookedDoctor ? [bookedDoctor] : [] });
+        await printPatientBill({}, workspace, bookedPatient, [], { appointment, patient: bookedPatient, branch: branches.find(b => b.id === (bookedPatient.branchId || appointment.branchId)), invoices, payments: [], doctors: bookedDoctor ? [bookedDoctor] : [] });
       } catch (e: any) { setError(e.message); } finally { setPrinting(false); }
     }
     return <section className="panel appointment-create appointment-thank-you">

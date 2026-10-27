@@ -1172,6 +1172,8 @@ td .text-button {
   align-items: center;
   margin-top: 20px;
 }
+.receipt-branch-address { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; font-size: 11px; line-height: 1.4; }
+@media print { .reception-receipt .receipt-branch-address { font-size: 7pt; margin-top: 1.5mm; } }
 .branch-row {
   display: flex;
   align-items: center;

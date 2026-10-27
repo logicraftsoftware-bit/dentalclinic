@@ -89,7 +89,7 @@ async function createCheckoutCharges({ store, tx, tenant }: any, appointment: an
 }
 
 export function registerReceptionRoutes(router: Router, run: any) {
-  router.get('/reception/:id', run('billing', async (req: any, res: any, { store }: any) => {
+  router.get('/reception/:id', run('billing', async (req: any, res: any, { store, tx, tenant }: any) => {
     const appointment = await store.get('appointment', id.parse(req.params.id));
     const [patient, invoices, doctors, charges] = await Promise.all([
       store.get('patient', appointment.patientId),
@@ -99,7 +99,9 @@ export function registerReceptionRoutes(router: Router, run: any) {
     ]);
     const payments = invoices.length ? await store.list('payment', { invoiceId: { in: invoices.map((i: any) => i.id) } }, { orderBy: { createdAt: 'desc' } }) : [];
     const adjustments = await store.list('patientAdjustment', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } });
-    res.json({ appointment, patient, invoices, payments, adjustments, creditBalancePaise: creditBalance(adjustments),
+    const branchId = patient.branchId || appointment.branchId;
+    const branch = branchId ? await tx.branch.findFirst({ where: { id: branchId, tenantId: tenant.id }, select: { id: true, name: true, address: true } }) : null;
+    res.json({ appointment, patient, branch, invoices, payments, adjustments, creditBalancePaise: creditBalance(adjustments),
       doctors: doctors.filter((d: any) => !appointment.branchId || doctorAvailableAt(d, appointment.branchId))
         .map((d: any) => ({ id: d.id, name: d.name, specialty: d.specialty })), charges });
   }));
