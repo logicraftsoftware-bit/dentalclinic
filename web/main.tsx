@@ -1771,6 +1771,16 @@ function Team({ tick, modal, action, workspace }: any) {
             </div>
             <Badge value={b.active ? 'ACTIVE' : 'Inactive'} />
             {!restricted && (
+              <button className="text-button" onClick={() => modal({
+                title: 'Edit branch',
+                fields: [
+                  { key: 'name', label: 'Branch name', required: true, value: b.name },
+                  { key: 'address', label: 'Address', value: b.address || '' },
+                ],
+                submit: (details: any) => action(() => api(`/clinic/branches/${b.id}`, 'PATCH', details), 'Branch updated'),
+              })}>Edit</button>
+            )}
+            {!restricted && (
               <button
                 className="text-button"
                 onClick={() =>

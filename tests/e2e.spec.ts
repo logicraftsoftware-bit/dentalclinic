@@ -548,6 +548,24 @@ test('staff creation selects branch and each role opens its permitted panel', as
     .locator('.sidebar nav')
     .getByRole('button', { name: 'Team & branches', exact: true })
     .click();
+  await page.getByRole('button', { name: 'Add branch', exact: true }).click();
+  let branchDialog = page.getByRole('dialog');
+  await branchDialog.getByLabel('Branch name', { exact: true }).fill('Temporary branch');
+  await branchDialog.getByLabel('Address', { exact: true }).fill('Original address');
+  await branchDialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  let branchRow = page.locator('.branch-row').filter({ hasText: 'Temporary branch' });
+  await branchRow.getByRole('button', { name: 'Edit', exact: true }).click();
+  branchDialog = page.getByRole('dialog', { name: 'Edit branch', exact: true });
+  await expect(branchDialog.getByLabel('Branch name', { exact: true })).toHaveValue('Temporary branch');
+  await branchDialog.getByLabel('Branch name', { exact: true }).fill('Updated branch');
+  await branchDialog.getByLabel('Address', { exact: true }).fill('Updated address');
+  await branchDialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page.reload();
+  branchRow = page.locator('.branch-row').filter({ hasText: 'Updated branch' });
+  await expect(branchRow).toContainText('Updated address');
+  page.once('dialog', dialog => dialog.accept());
+  await branchRow.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(branchRow).toHaveCount(0);
   await page.getByRole('button', { name: 'Add staff', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const adminEmail = `${randomUUID()}@example.test`;
