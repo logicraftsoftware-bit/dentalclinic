@@ -1942,6 +1942,45 @@ test('charge deletion is clinic scoped, restricted to master managers, and prote
   assert.equal((await request(`/clinic/charges/${inactive.id}`, 'DELETE', undefined, clinic.cookie)).status, 200);
 });
 
+test('fee bills use master prices, save appointment payments atomically and scope standalone bills', async () => {
+  const clinic = await register('Categorized fees clinic');
+  const enterprise = await db.plan.findUniqueOrThrow({ where: { name: 'Enterprise' } });
+  await db.subscription.update({ where: { tenantId: clinic.tenantId }, data: { planId: enterprise.id } });
+  async function create(resource: string, body: any) { const r = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie); assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data; }
+  const branch = await create('branches', { name: 'Fees branch' });
+  const patient = await create('patients', { name: 'Fee selection patient', phone: '9000018800', branchId: branch.id });
+  const doctor = await create('doctors', { name: 'Fee selection dentist', branchId: branch.id });
+  const departments = ['General dentistry', 'Department of Implantology', 'Department of Orthodontics', 'Department of Oral Surgery'];
+  const lines = [];
+  for (const [index, department] of departments.entries()) {
+    const group = await create('charge-groups', { name: `Fee subgroup ${index}`, groupName: department });
+    const charge = await create('charges', { name: `Fee procedure ${index}`, chargeGroupId: group.id, pricePaise: 10000, labChargePaise: 2000 });
+    lines.push({ catalogItemId: charge.id, doctorId: doctor.id, department });
+  }
+  const feeBill = { checkoutKey: randomUUID(), clinicFee: true, lines, payment: { status: 'PAID', method: 'CASH', amountPaise: 78000 } };
+  const payload = { patientId: patient.id, branchId: branch.id, startsAt: new Date(Date.now() + 86400000).toISOString(), useClinicFee: true, chargeConsultantFee: false, chargeVisitingFee: false, feeBill };
+  const booked = await create('appointments', payload);
+  assert.equal(booked.paymentStatus, 'PAID'); assert.equal(booked.bill.totalPaise, 78000); assert.equal(booked.bill.balancePaise, 0);
+  assert.equal(booked.bill.invoices.length, 9);
+  assert.equal(await db.payment.count({ where: { tenantId: clinic.tenantId } }), 9);
+  assert.equal(await db.commission.count({ where: { tenantId: clinic.tenantId } }), 4, 'Only procedure collections generate doctor commission');
+  const beforeAppointments = await db.appointment.count({ where: { tenantId: clinic.tenantId } });
+  const beforeInvoices = await db.invoice.count({ where: { tenantId: clinic.tenantId } });
+  const invalid = await request('/clinic/appointments', 'POST', { ...payload, feeBill: { ...feeBill, checkoutKey: randomUUID(), payment: { ...feeBill.payment, amountPaise: 1 } } }, clinic.cookie);
+  assert.equal(invalid.status, 400); assert.equal(await db.appointment.count({ where: { tenantId: clinic.tenantId } }), beforeAppointments);
+  assert.equal(await db.invoice.count({ where: { tenantId: clinic.tenantId } }), beforeInvoices);
+  const bill = { patientId: patient.id, ...feeBill, checkoutKey: randomUUID(), clinicFee: false, lines: [lines[0]], payment: { status: 'PARTIAL', method: 'UPI', amountPaise: 5000 } };
+  const standalone = await create('fee-bills', bill);
+  assert.equal(standalone.totalPaise, 12000); assert.equal(standalone.paidPaise, 5000); assert.equal(standalone.balancePaise, 7000);
+  const replay = await create('fee-bills', bill); assert.deepEqual(replay, standalone);
+  assert.equal((await request('/clinic/fee-bills', 'POST', { ...bill, payment: { ...bill.payment, amountPaise: 6000 } }, clinic.cookie)).status, 409);
+  assert.equal((await request('/clinic/fee-bills', 'POST', { ...bill, checkoutKey: randomUUID(), patientId: patientB.id }, clinic.cookie)).status, 404);
+  assert.equal((await request('/clinic/fee-bills', 'POST', { ...bill, checkoutKey: randomUUID(), lines: [{ ...lines[0], department: departments[1] }] }, clinic.cookie)).status, 400);
+  const unpaid = await create('fee-bills', { ...bill, checkoutKey: randomUUID(), payment: { status: 'PENDING', method: 'CASH', amountPaise: 0 } });
+  assert.equal(unpaid.paidPaise, 0); assert.equal(unpaid.balancePaise, 12000);
+  assert.equal((await request('/clinic/fee-bills', 'POST', { ...bill, checkoutKey: randomUUID(), lines: [{ ...lines[0], doctorId: doctorA.id }] }, clinic.cookie)).status, 404);
+});
+
 test('patient registration and edits retain age gender and address without inventing dates of birth', async () => {
   const clinic = await register('Patient demographics clinic');
   const created = await request('/clinic/patients', 'POST', { name: 'Demographics patient', phone: '9000019933', age: 28, gender: 'Female', address: 'GS Road, Guwahati' }, clinic.cookie);

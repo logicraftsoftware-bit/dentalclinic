@@ -5,6 +5,7 @@ import { DentalVisit, ReferralInbox } from './dental-workflow';
 import { AppointmentCalendar } from './appointment-calendar';
 import { Reception } from './reception';
 import { AppointmentCreate } from './appointment-create';
+import { FeeBillDialog } from './fee-selection';
 import { usePageRoute, workspacePath, publicPages, patientTabs, loginDestination } from './routes';
 import { ClinicMasters } from './masters';
 import { Accounts } from './accounts';
@@ -1161,6 +1162,7 @@ function Patients(props: any) {
   );
 }
 function Billing({ tick, modal, action, go, notify }: any) {
+  const [creatingBill, setCreatingBill] = useState(false);
   const [cancellingInvoice, setCancellingInvoice] = useState<any>(null);
   const [creditPatient, setCreditPatient] = useState('');
   const { data: billingTotals } = useData('/clinic/billing-totals', tick);
@@ -1182,9 +1184,9 @@ function Billing({ tick, modal, action, go, notify }: any) {
         title="Billing & Payments"
         subtitle="Clear invoices. Flexible installments. Happier patients."
       >
-        <button className="primary" onClick={() => invoiceModal(modal, action)}>
+        <button className="primary" onClick={() => setCreatingBill(true)}>
           <Plus size={17} />
-          Create invoice
+          Create bill
         </button>
       </PageTitle>
       <div className="metrics three">
@@ -1219,7 +1221,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
         {!data ? (
           <DataError error={error} />
         ) : !data.length ? (
-          <Empty action={() => invoiceModal(modal, action)} />
+          <Empty action={() => setCreatingBill(true)} />
         ) : (
           <div className="table-wrap">
             <table>
@@ -1321,6 +1323,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
       </section>
     {creditPatient && <div className="modal-backdrop"><section className="modal adjustment-dialog" role="dialog" aria-modal="true" aria-label="Patient credit"><div className="panel-heading"><h2>Patient credit</h2><button className="secondary small" onClick={() => setCreditPatient('')}>Close</button></div><PatientCreditPanel patientId={creditPatient} invoices={(data || []).filter((i: any) => i.patientId === creditPatient)} tick={tick} action={action} /></section></div>}
     {cancellingInvoice && <AdjustmentDialog type="CANCEL" patientId={cancellingInvoice.patientId} procedure={{ name: cancellingInvoice.description, paid: cancellingInvoice.paidPaise, invoiceIds: [cancellingInvoice.id] }} action={action} close={() => setCancellingInvoice(null)} onSaved={() => {}} />}
+    {creatingBill && <FeeBillDialog action={action} close={() => setCreatingBill(false)} />}
     </div>
   );
 }

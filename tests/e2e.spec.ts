@@ -65,6 +65,73 @@ test('appointment fee checkboxes work independently and a clinic-only visit need
   await expect(page.getByRole('button',{name:'Open billing'})).toBeVisible();
 });
 
+test('appointment and billing fees filter procedures by department and default to full cash payment', async ({ page }) => {
+  const headers = { Origin: 'http://localhost:5173' }, email = `categorized-fees-${randomUUID()}@example.test`, password = 'Categorized-Fees-Browser-123';
+  const plans = await (await page.request.get('/api/public/plans')).json();
+  expect((await page.request.post('/api/auth/register', { headers, data: { clinicName: 'Categorized fees browser clinic', name: 'Owner', email, password, phone: '9876543210', planId: plans.find((p: any) => p.name === 'Enterprise').id, acceptTerms: true } })).status()).toBe(201);
+  await page.request.post('/api/auth/login', { headers, data: { email, password } });
+  async function create(resource: string, data: any) { const r = await page.request.post(`/api/clinic/${resource}`, { headers, data }); expect(r.status()).toBe(201); return r.json(); }
+  const branch = await create('branches', { name: 'Fee selection branch' });
+  const patient = await create('patients', { name: 'Fee selection patient', phone: '9000088800', branchId: branch.id });
+  const doctor = await create('doctors', { name: 'Dr Fee selection', branchId: branch.id });
+  const departments = ['General dentistry', 'Department of Implantology', 'Department of Orthodontics', 'Department of Oral Surgery'];
+  const charges = [];
+  for (const [index, department] of departments.entries()) {
+    const group = await create('charge-groups', { name: `Browser subgroup ${index}`, groupName: department });
+    charges.push(await create('charges', { name: `Browser procedure ${index}`, chargeGroupId: group.id, pricePaise: 10000, labChargePaise: 2000 }));
+  }
+  await page.goto(`/clinic/appointments/new?patientId=${patient.id}`);
+  await expect(page.getByLabel('Payment status', { exact: true })).toHaveValue('PAID');
+  await expect(page.getByLabel('Payment mode', { exact: true })).toHaveValue('CASH');
+  await page.getByRole('checkbox', { name: /^Clinic fee/ }).check();
+  await page.getByRole('checkbox', { name: 'General Dentistry Bill', exact: true }).check();
+  await expect(page.getByLabel('General Dentistry procedure').locator('option')).toHaveCount(2);
+  await page.getByLabel('General Dentistry procedure').selectOption(charges[0].id);
+  await page.getByRole('button', { name: 'Add general dentistry procedure', exact: true }).click();
+  await page.getByLabel('Treating doctor for Browser procedure 0').selectOption(doctor.id);
+  await page.getByRole('checkbox', { name: 'Speciality Treatment Bill', exact: true }).check();
+  for (const index of [1, 2, 3]) {
+    await page.getByLabel('Department', { exact: true }).selectOption(departments[index]);
+    await expect(page.getByLabel('Speciality procedure').locator('option')).toHaveCount(2);
+    await page.getByLabel('Speciality procedure').selectOption(charges[index].id);
+    await page.getByRole('button', { name: 'Add speciality procedure', exact: true }).click();
+    await page.getByLabel(`Treating doctor for Browser procedure ${index}`).selectOption(doctor.id);
+  }
+  await expect(page.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('780');
+  await page.screenshot({ path: '.tools/screenshots/appointment-fee-selection.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('checkbox', { name: 'General Dentistry Bill', exact: true }).uncheck();
+  await expect(page.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('660');
+  await expect(page.getByLabel('Treating doctor for Browser procedure 0')).toHaveCount(0);
+  await page.getByLabel(/^Date/).fill(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+  await page.getByLabel(/^Time/).fill('11:00');
+  await page.getByRole('combobox', { name: 'Branch *', exact: true }).selectOption(branch.id);
+  const response = page.waitForResponse(r => r.url().endsWith('/api/clinic/appointments') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Create appointment', exact: true }).click();
+  const saved = await (await response).json();
+  expect(saved.paymentStatus).toBe('PAID'); expect(saved.bill.paidPaise).toBe(66000); expect(saved.bill.balancePaise).toBe(0);
+  await expect(page.getByText('Payment status: Paid', { exact: true })).toBeVisible();
+  await page.goto('/clinic/billing');
+  await page.getByRole('button', { name: 'Create bill', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create bill', exact: true });
+  await dialog.getByLabel('Patient', { exact: true }).selectOption(patient.id);
+  await dialog.getByRole('checkbox', { name: /^Clinic fee/ }).check();
+  await dialog.getByRole('checkbox', { name: 'General Dentistry Bill', exact: true }).check();
+  await dialog.getByLabel('General Dentistry procedure').selectOption(charges[0].id);
+  await dialog.getByRole('button', { name: 'Add general dentistry procedure', exact: true }).click();
+  await dialog.getByLabel('Treating doctor for Browser procedure 0').selectOption(doctor.id);
+  await expect(dialog.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('420');
+  await dialog.getByLabel('Paid amount (₹)', { exact: true }).fill('100');
+  await expect(dialog.getByLabel('Payment status', { exact: true })).toHaveValue('PARTIAL');
+  await dialog.getByLabel('Payment mode', { exact: true }).selectOption('UPI');
+  const billResponse = page.waitForResponse(r => r.url().endsWith('/api/clinic/fee-bills') && r.request().method() === 'POST');
+  await dialog.getByRole('button', { name: 'Save bill and payment', exact: true }).click();
+  const bill = await (await billResponse).json(); expect(bill.totalPaise).toBe(42000); expect(bill.paidPaise).toBe(10000); expect(bill.balancePaise).toBe(32000);
+  await expect(dialog).toHaveCount(0);
+});
+
 test('receptionist sees today, marks attendance and bills procedures for multiple doctors', async ({ page }) => {
   const headers = { Origin: 'http://localhost:5173' }, password = 'Reception-Browser-Password-123';
   const plans = await (await page.request.get('/api/public/plans')).json();
@@ -841,8 +908,8 @@ test('patient registration collects age gender and address from appointments and
   const patient = await (await patientResponse).json();
   expect(patient.age).toBe(27); expect(patient.gender).toBe('Female'); expect(patient.address).toBe('GS Road, Guwahati'); expect(patient.dob).toBeNull();
   const appointment = await (await appointmentResponse).json();
+  expect(appointment.paymentStatus).toBe('PAID');
   await page.goto(`/clinic/reception/billing/${appointment.id}`);
-  await page.getByRole('button', { name: 'Save bill changes', exact: true }).click();
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.reception-receipt')).toContainText('27 years / Female');
   await expect(page.locator('.reception-receipt')).toContainText('GS Road, Guwahati');

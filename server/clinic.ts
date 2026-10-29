@@ -4,6 +4,7 @@ import { billingTotals, registerPatientAdjustmentRoutes } from './patient-adjust
 import { accountsReport } from './accounts-report.js';
 import { registerDentalRoutes } from './dental.js';
 import { registerReceptionRoutes } from './reception.js';
+import { feeBillSchema, saveFeeBill } from './fee-bills.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -120,6 +121,7 @@ const schemas: Record<
       feeType: z.enum(['consultant', 'visiting', 'clinic']).optional(),
       chargeConsultantFee: z.boolean().optional(),
       chargeVisitingFee: z.boolean().optional(),
+      feeBill: feeBillSchema.optional(),
       notes: string,
     }),
     refs: { patientId: 'patient', doctorId: 'doctor', branchId: 'branch' },
@@ -401,7 +403,7 @@ registerDentalRoutes(clinicApi, run, validateSlot);
 registerReceptionRoutes(clinicApi, run);
 registerPatientAdjustmentRoutes(clinicApi, run);
 clinicApi.get('/billing-patients', run('billing', async (_req: any, res: any, { store }: any) => {
-  res.json(await store.list('patient', { archived: false }, { select: { id: true, name: true, phone: true }, orderBy: { name: 'asc' } }));
+  res.json(await store.list('patient', { archived: false }, { select: { id: true, name: true, phone: true, branchId: true }, orderBy: { name: 'asc' } }));
 }));
 // A bounded calendar range returns every matching visit, without the generic 500-row limit.
 clinicApi.get('/appointment-calendar', run('appointments', async (req: any, res: any, { store, tenant }: any) => {
@@ -501,8 +503,15 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
   const c = schemas[resource];
   clinicApi.post(
     `/${resource}`,
-    run(c.cap, async (req: any, res: any, { store, subscription }: any, actor: any) => {
+    run(c.cap, async (req: any, res: any, ctx: any, actor: any) => {
+      const { store, subscription, membership } = ctx;
       const data = c.schema.strict().parse(req.body);
+      const feeBill = resource === 'appointments' && data.feeBill ? feeBillSchema.parse(data.feeBill) : undefined;
+      delete data.feeBill;
+      if (feeBill) {
+        assert(permission(membership.role, 'billing', membership.permissions), 403, 'Billing permission is required to create a bill.');
+        assert(feeBill.clinicFee === data.useClinicFee, 400, 'Clinic fee selection must match the bill.');
+      }
       if (resource === 'patients' && data.age !== undefined) data.ageRecordedAt = data.age === null ? null : new Date();
       if (c.limit) {
         const filters = ['doctors', 'branches'].includes(c.limit) ? { active: true } : {};
@@ -533,6 +542,11 @@ for (const [resource, config] of Object.entries({ ...schemas, ...readOnly })) {
         if (Number(data.consultationPaise) + Number(data.visitingConsultationPaise) + Number(data.clinicFeePaise) === 0) data.paymentStatus = 'NOT_REQUIRED';
       }
       const row = await store.create(c.model, data);
+      if (feeBill) {
+        const bill = await saveFeeBill(ctx, row.patientId, feeBill, actor, row);
+        row.paymentStatus = feeBill.payment.status;
+        row.bill = bill;
+      }
       await store.audit(actor.userId, `${resource}.created`, row.id);
       res.status(201).json(row);
     }),

@@ -4,26 +4,9 @@ import { assert, id, money, hash } from './core.js';
 import { recordCheckoutPayment } from './patient-payments.js';
 import { doctorAvailableAt } from './doctor-branches.js';
 import { creditBalance } from './patient-adjustments.js';
-
-// The same source keys are used when the doctor closes a visit, so reception
-// can collect its selected appointment fee without billing that fee twice.
-export async function ensureVisitFees(store: any, appointment: any) {
-  const existing = await store.list('invoice', { appointmentId: appointment.id });
-  const fees = [
-    ['Consultant fee', appointment.consultationPaise],
-    ['Visiting consultant fee', appointment.visitingConsultationPaise],
-    ['Clinic fee', appointment.clinicFeePaise],
-  ];
-  for (const [index, [description, amount]] of fees.entries()) {
-    if (Number(amount) > 0 && !existing.some((i: any) => i.description === description)) {
-      await store.create('invoice', {
-        patientId: appointment.patientId, appointmentId: appointment.id,
-        sourceKey: `${appointment.id}:fee:${index}`, description: String(description),
-        chargeKind: 'VISIT', totalPaise: Number(amount),
-      });
-    }
-  }
-}
+import { feeBillSchema, saveFeeBill } from './fee-bills.js';
+import { ensureVisitFees } from './visit-fees.js';
+export { ensureVisitFees } from './visit-fees.js';
 
 const billSchema = z.object({
       billKey: z.string().uuid(),
@@ -89,6 +72,10 @@ async function createCheckoutCharges({ store, tx, tenant }: any, appointment: an
 }
 
 export function registerReceptionRoutes(router: Router, run: any) {
+  router.post('/fee-bills', run('billing', async (req: any, res: any, ctx: any, actor: any) => {
+    const { patientId, ...input } = feeBillSchema.extend({ patientId: id }).parse(req.body);
+    res.status(201).json(await saveFeeBill(ctx, patientId, input, actor));
+  }));
   router.get('/reception/:id', run('billing', async (req: any, res: any, { store, tx, tenant }: any) => {
     const appointment = await store.get('appointment', id.parse(req.params.id));
     const [patient, invoices, doctors, charges] = await Promise.all([

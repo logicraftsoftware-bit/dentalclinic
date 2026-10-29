@@ -3815,6 +3815,22 @@ td .text-button {
 .appointment-selection { padding: 12px 0; color: #287c6e; }
 .appointment-actions { display: flex; justify-content: flex-end; gap: 12px; }
 .appointment-error { color: #ad3333; padding: 12px; background: #fff1f1; border-radius: 8px; }
+.appointment-create fieldset.fee-section-wrapper { border: 0; padding: 0; margin: 0; min-width: 0; }
+.fee-type-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.fee-selection section { margin-top: 22px; padding-top: 18px; border-top: 1px solid #dce8e4; }
+.fee-selection h3 { margin-bottom: 14px; }
+.fee-category { display: grid; gap: 12px; margin-top: 14px; }
+.fee-category button { justify-self: start; }
+.fee-selected-procedure { margin-top: 16px; padding: 18px; background: #f4f9f7; border: 1px solid #dce8e4; border-radius: 12px; }
+.fee-selected-procedure small { display: block; margin-top: 6px; color: #658179; }
+.fee-bill-dialog { width: min(900px, 95vw); }
+.fee-bill-dialog form { padding: 22px; }
+.fee-bill-dialog fieldset { min-width: 0; margin-bottom: 20px; border: 1px solid #dce8e4; border-radius: 12px; padding: 20px; }
+.fee-bill-dialog legend { padding: 0 8px; font-weight: 700; }
+.fee-bill-dialog label { display: grid; gap: 8px; margin-bottom: 12px; }
+.fee-bill-dialog label.appointment-fee-option { display: flex; margin: 0; }
+.fee-bill-dialog .form-fields { padding: 0; }
+@media(max-width: 700px) { .fee-type-options { grid-template-columns: 1fr; } .fee-bill-dialog form { padding: 12px; } .fee-bill-dialog fieldset { padding: 14px; } }
 @media(max-width: 640px) { .appointment-create { padding: 16px; } .appointment-create .page-heading { flex-direction: column; } .appointment-fees { grid-template-columns: 1fr; } }
 
 .appointment-create .form-fields { padding: 0; margin-bottom: 18px; }
