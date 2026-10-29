@@ -163,7 +163,7 @@ const schemas: Record<
     refs: { patientId: 'patient' },
   },
   specialities: { model: 'speciality', cap: 'settings', schema: z.object({ name: text }) },
-  'charge-groups': { model: 'chargeGroup', cap: 'settings', schema: z.object({ name: text }) },
+  'charge-groups': { model: 'chargeGroup', cap: 'settings', schema: z.object({ name: text, groupName: text.optional() }) },
   charges: {
     model: 'catalogItem',
     cap: 'settings',

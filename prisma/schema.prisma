@@ -545,6 +545,7 @@ model ChargeGroup {
   tenantId String
   name String
   nameKey String
+  groupName String?
   active Boolean @default(true)
   createdAt DateTime @default(now())
   @@unique([tenantId, id])

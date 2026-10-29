@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, clearApiReads, money } from './api';
+import { chargeDepartment, chargeDepartments, chargeGroupLabel, chargeSubgroupOrder } from './charge-groups';
 
 type MasterKind = 'specialities' | 'charge-groups' | 'charges';
 const labels: Record<MasterKind, string> = {
@@ -42,7 +43,13 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
       active = false;
     };
   }, [tick, retry, kind]);
-  const groups = data?.['charge-groups'] || [];
+  const groups = [...(data?.['charge-groups'] || [])].sort((a, b) => {
+    const rank = (group: any) => {
+      const index = chargeDepartments.indexOf(chargeDepartment(group) as typeof chargeDepartments[number]);
+      return index < 0 ? chargeDepartments.length : index;
+    };
+    return rank(a) - rank(b) || chargeSubgroupOrder(a.name) - chargeSubgroupOrder(b.name) || a.name.localeCompare(b.name);
+  });
   const canManage = ['OWNER', 'MANAGER'].includes(workspace?.role);
   const removeCharge = async (row: any) => {
     if (deletingId || !window.confirm(`Permanently delete charge "${row.name}"? Charges linked to treatment records cannot be deleted.`)) return;
@@ -60,7 +67,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
   const edit = (row?: any) => {
     const options = groups
       .filter((group) => group.active || group.id === row?.chargeGroupId)
-      .map((group) => ({ value: group.id, label: group.name }));
+      .map((group) => ({ value: group.id, label: chargeGroupLabel(group) }));
     modal({
       title: `${row ? 'Edit' : 'Add'} ${kind === 'specialities' ? 'speciality' : kind === 'charge-groups' ? 'charge group' : 'charge'}`,
       subtitle:
@@ -72,11 +79,11 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
           ? [
               {
                 key: 'chargeGroupId',
-                label: 'Charge group',
+                label: 'Charge subgroup',
                 type: 'select',
                 required: true,
                 value: row?.chargeGroupId || '',
-                options: [{ value: '', label: 'Choose charge group' }, ...options],
+                options: [{ value: '', label: 'Choose charge subgroup' }, ...options],
               },
               { key: 'name', label: 'Charge name', required: true, value: row?.name },
               {
@@ -95,9 +102,17 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
               },
             ]
           : [
+              ...(kind === 'charge-groups' ? [{
+                key: 'groupName',
+                label: 'Group name',
+                type: 'select',
+                required: true,
+                value: row ? chargeDepartment(row) : '',
+                options: [{ value: '', label: 'Choose group' }, ...chargeDepartments.map(name => ({ value: name, label: name }))],
+              }] : []),
               {
                 key: 'name',
-                label: kind === 'specialities' ? 'Speciality name' : 'Group name',
+                label: kind === 'specialities' ? 'Speciality name' : 'Subgroup name',
                 required: true,
                 value: row?.name,
               },
@@ -108,8 +123,9 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
         ),
     });
   };
-  const rows = (data?.[kind] || []).filter((row) => {
-    const group = groups.find((group) => group.id === row.chargeGroupId)?.name || '';
+  const rows = (kind === 'charge-groups' ? groups : data?.[kind] || []).filter((row) => {
+    const chargeGroup = groups.find((group) => group.id === row.chargeGroupId);
+    const group = kind === 'charge-groups' ? chargeDepartment(row) : chargeGroup ? chargeGroupLabel(chargeGroup) : '';
     return (
       `${row.name} ${group}`.toLowerCase().includes(query.toLowerCase()) &&
       (status === 'all' || row.active === (status === 'active')) &&
@@ -189,10 +205,10 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
             />
           </label>
           {kind === 'charges' && <label>
-            Charge group
+            Charge subgroup
             <select aria-label="Filter by charge group" value={groupId} onChange={event => setGroupId(event.target.value)}>
-              <option value="">All charge groups</option>
-              {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+              <option value="">All charge subgroups</option>
+              {groups.map(group => <option key={group.id} value={group.id}>{chargeGroupLabel(group)}</option>)}
             </select>
           </label>}
           <label>
@@ -229,12 +245,13 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
               <table>
                 <thead>
                   <tr>
-                    {kind === 'charges' && <th>Charge group</th>}
+                    {kind !== 'specialities' && <th>Group name</th>}
+                    {kind === 'charges' && <th>Subgroup name</th>}
                     <th>
                       {kind === 'specialities'
                         ? 'Speciality name'
                         : kind === 'charge-groups'
-                          ? 'Group name'
+                          ? 'Subgroup name'
                           : 'Charge name'}
                     </th>
                     {kind === 'charges' && (
@@ -250,6 +267,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
                 <tbody>
                   {pageRows.map((row) => (
                     <tr key={row.id}>
+                      {kind !== 'specialities' && <td>{chargeDepartment(kind === 'charge-groups' ? row : groups.find(group => group.id === row.chargeGroupId) || { name: '' }) || 'Unassigned'}</td>}
                       {kind === 'charges' && (
                         <td>
                           {groups.find((group) => group.id === row.chargeGroupId)?.name ||
@@ -297,7 +315,7 @@ export function ClinicMasters({ tick, modal, action, workspace, route, go }: any
                   ))}
                   {!rows.length && (
                     <tr>
-                      <td colSpan={kind === 'charges' ? 6 : 3}>
+                      <td colSpan={kind === 'charges' ? 7 : kind === 'charge-groups' ? 4 : 3}>
                         No matching entries. Add a master to get started.
                       </td>
                     </tr>
