@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, money } from './api';
+import { SearchableSelect } from './searchable-select';
 import { chargeDepartment, chargeDepartments } from './charge-groups';
 
 export type FeeSelection = {
@@ -20,7 +21,6 @@ export function feePayload(value: FeeSelection, total: number, checkoutKey: stri
 
 export function FeeSelectionFields({ value, onChange, charges, groups, doctors, extraTotal = 0 }: { value: FeeSelection; onChange: (value: FeeSelection) => void; charges: any[]; groups: any[]; doctors: any[]; extraTotal?: number }) {
   const [generalCharge, setGeneralCharge] = useState(''), [specialCharge, setSpecialCharge] = useState('');
-  const [generalSearch, setGeneralSearch] = useState(''), [specialSearch, setSpecialSearch] = useState('');
   const total = feeTotal(value, charges, extraTotal);
   const update = (patch: Partial<FeeSelection>) => onChange({ ...value, ...patch });
   const available = (department: string) => charges.filter(c => c.active && groups.some(g => g.id === c.chargeGroupId && g.active && chargeDepartment(g) === department));
@@ -28,27 +28,21 @@ export function FeeSelectionFields({ value, onChange, charges, groups, doctors, 
     const selected = general ? generalCharge : specialCharge;
     const setSelected = general ? setGeneralCharge : setSpecialCharge;
     const label = general ? 'General Dentistry' : 'Speciality';
-    const search = general ? generalSearch : specialSearch;
-    const setSearch = general ? setGeneralSearch : setSpecialSearch;
     const procedures = available(department);
-    const query = search.trim().toLowerCase();
-    const choices = procedures.filter(c => `${c.name} ${groups.find(g => g.id === c.chargeGroupId)?.name || ''}`.toLowerCase().includes(query));
     return <div className="fee-category">
-      <label>Search {general ? 'General Dentistry' : 'speciality'} procedures<input type="search" aria-label={`Search ${label} procedures`} placeholder="Search by procedure or subgroup name" value={search} onChange={e => { setSearch(e.target.value); setSelected(''); }} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }} /></label>
-      <label>Treatment procedure category<select aria-label={`${label} procedure`} value={selected} onChange={e => setSelected(e.target.value)}><option value="">Select {general ? 'General Dentistry' : 'speciality'} procedure</option>{groups.filter(g => g.active && chargeDepartment(g) === department && choices.some(c => c.chargeGroupId === g.id)).map(g => <optgroup label={g.name} key={g.id}>{choices.filter(c => c.chargeGroupId === g.id).map(c => <option key={c.id} value={c.id}>{c.name} — {money(c.pricePaise + (c.labChargePaise || 0))}</option>)}</optgroup>)}</select></label>
+      <SearchableSelect key={department} label={`${label} procedure`} placeholder={`Select ${general ? 'General Dentistry' : 'speciality'} procedure`} searchLabel={`Search ${label} procedures`} options={groups.flatMap(g => procedures.filter(c => c.chargeGroupId === g.id).map(c => ({ value: c.id, label: `${c.name} — ${money(c.pricePaise + (c.labChargePaise || 0))}`, group: g.name })))} value={selected} onChange={setSelected} />
       <button type="button" className="secondary small" disabled={!selected || value.lines.length >= 50} onClick={() => { update({ lines: [...value.lines, { key: crypto.randomUUID(), catalogItemId: selected, doctorId: '', department }] }); setSelected(''); }}>Add {general ? 'general dentistry' : 'speciality'} procedure</button>
-      {!choices.length && <p className="muted" role="status">{procedures.length ? 'No matching procedures. Try another search.' : 'No active procedures in this department. Add them in Masters.'}</p>}
     </div>;
   }
   return <>
     <fieldset className="fee-selection"><legend>Fees</legend>
       <div className="fee-type-options">
         <label className="appointment-fee-option"><input type="checkbox" checked={value.clinicFee} onChange={e => update({ clinicFee: e.target.checked })} /><span>Clinic fee<strong>{money(30000)}</strong></span></label>
-        <label className="appointment-fee-option"><input type="checkbox" checked={value.general} onChange={e => { setGeneralCharge(''); setGeneralSearch(''); update({ general: e.target.checked, lines: value.lines.filter(l => l.department !== chargeDepartments[0]) }); }} /><span>General Dentistry Bill</span></label>
-        <label className="appointment-fee-option"><input type="checkbox" checked={value.speciality} onChange={e => { setSpecialCharge(''); setSpecialSearch(''); update({ speciality: e.target.checked, department: '', lines: value.lines.filter(l => l.department === chargeDepartments[0]) }); }} /><span>Speciality Treatment Bill</span></label>
+        <label className="appointment-fee-option"><input type="checkbox" checked={value.general} onChange={e => { setGeneralCharge(''); update({ general: e.target.checked, lines: value.lines.filter(l => l.department !== chargeDepartments[0]) }); }} /><span>General Dentistry Bill</span></label>
+        <label className="appointment-fee-option"><input type="checkbox" checked={value.speciality} onChange={e => { setSpecialCharge(''); update({ speciality: e.target.checked, department: '', lines: value.lines.filter(l => l.department === chargeDepartments[0]) }); }} /><span>Speciality Treatment Bill</span></label>
       </div>
       {value.general && <section aria-label="General Dentistry Bill procedures"><h3>General Dentistry Bill</h3>{category(chargeDepartments[0], true)}</section>}
-      {value.speciality && <section aria-label="Speciality Treatment Bill procedures"><h3>Speciality Treatment Bill</h3><label>Department<select aria-label="Department" value={value.department} onChange={e => { setSpecialCharge(''); setSpecialSearch(''); update({ department: e.target.value }); }}><option value="">Select speciality department</option>{chargeDepartments.slice(1).map(name => <option key={name} value={name}>{name}</option>)}</select></label>{value.department && category(value.department, false)}</section>}
+      {value.speciality && <section aria-label="Speciality Treatment Bill procedures"><h3>Speciality Treatment Bill</h3><label>Department<select aria-label="Department" value={value.department} onChange={e => { setSpecialCharge(''); update({ department: e.target.value }); }}><option value="">Select speciality department</option>{chargeDepartments.slice(1).map(name => <option key={name} value={name}>{name}</option>)}</select></label>{value.department && category(value.department, false)}</section>}
       {value.lines.map(line => {
         const charge = charges.find(c => c.id === line.catalogItemId);
         return <div className="fee-selected-procedure" key={line.key}><p><strong>{charge?.name}</strong><small>{line.department}</small></p><p>Procedure: {money(charge?.pricePaise || 0)} · Lab: {money(charge?.labChargePaise || 0)}</p><label>Treating doctor<select required aria-label={`Treating doctor for ${charge?.name}`} value={line.doctorId} onChange={e => update({ lines: value.lines.map(l => l.key === line.key ? { ...l, doctorId: e.target.value } : l) })}><option value="">Select {line.department === chargeDepartments[0] ? 'general dentist' : 'speciality doctor'}</option>{doctors.map(d => <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` — ${d.specialty}` : ''}</option>)}</select></label><button type="button" className="text-button" onClick={() => update({ lines: value.lines.filter(l => l.key !== line.key) })}>Remove {charge?.name}</button></div>;

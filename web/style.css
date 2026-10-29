@@ -3821,6 +3821,23 @@ td .text-button {
 .fee-selection h3 { margin-bottom: 14px; }
 .fee-category { display: grid; gap: 12px; margin-top: 14px; }
 .fee-category button { justify-self: start; }
+.searchable-select { position: relative; min-width: 0; }
+.searchable-select-label { display: block; font-weight: 600; margin-bottom: 8px; }
+.searchable-select-trigger { width: 100%; min-height: 48px; border: 1px solid #cdd9e6; background: white; color: inherit; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; font: inherit; }
+.searchable-select-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.searchable-select-trigger svg { flex-shrink: 0; }
+.searchable-select-trigger[aria-expanded="true"] { border-color: #6b87ef; box-shadow: 0 0 0 3px #eaf0ff; }
+.searchable-select-popup { position: absolute; z-index: 40; top: calc(100% + 7px); left: 0; right: 0; border: 1px solid #cdd9e6; border-radius: 12px; background: white; box-shadow: 0 14px 28px #20304726; overflow: hidden; }
+.searchable-select-search { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #e4eaf3; color: #7185a3; }
+.searchable-select-search input { flex: 1; width: 0; min-width: 0; padding: 9px 11px; margin: 0; border: 1px solid #8498f5; border-radius: 7px; font: inherit; }
+.searchable-select-search input:focus { outline: 2px solid #dce3ff; outline-offset: 1px; }
+.searchable-select-search .searchable-select-clear { border: 0; background: transparent; color: #7185a3; display: flex; padding: 6px; flex-shrink: 0; }
+.searchable-select-options { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; padding: 7px; }
+.searchable-select-group { padding: 9px 12px 5px; color: #71809a; font-size: 12px; font-weight: 700; }
+.searchable-select-options button { width: 100%; border: 0; border-radius: 8px; padding: 12px 14px; background: white; color: #263d5f; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 10px; font: inherit; }
+.searchable-select-options button:hover, .searchable-select-options button.is-focused, .searchable-select-options button[aria-selected="true"] { background: #eef3ff; color: #2d60d7; }
+.searchable-select-options button svg { flex-shrink: 0; }
+.searchable-select-options p { padding: 12px; color: #71809a; }
 .fee-selected-procedure { margin-top: 16px; padding: 18px; background: #f4f9f7; border: 1px solid #dce8e4; border-radius: 12px; }
 .fee-selected-procedure small { display: block; margin-top: 6px; color: #658179; }
 .fee-bill-dialog { width: min(900px, 95vw); }
