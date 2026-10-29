@@ -357,15 +357,17 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByRole('tab', { name: 'Charge group master' }).click();
   await page.getByRole('button', { name: 'Add charge group', exact: true }).click();
   masterDialog = page.getByRole('dialog');
-  await masterDialog.getByLabel('Group name').fill('Dental procedures');
+  await masterDialog.getByLabel('Group name', { exact: true }).selectOption({ label: 'General dentistry' });
+  await masterDialog.getByLabel('Subgroup name', { exact: true }).fill('Dental procedures');
   await masterDialog.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByRole('cell', { name: 'Dental procedures', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'General dentistry', exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Charge master', exact: true }).click();
   await page.getByRole('button', { name: 'Add charge', exact: true }).click();
   masterDialog = page.getByRole('dialog');
   await masterDialog
-    .getByLabel('Charge group', { exact: true })
-    .selectOption({ label: 'Dental procedures' });
+    .getByLabel('Charge subgroup', { exact: true })
+    .selectOption({ label: 'General dentistry / Dental procedures' });
   await masterDialog.getByLabel('Charge name').fill('Root canal');
   await masterDialog.getByLabel('Charge (₹)', { exact: true }).fill('2000');
   await masterDialog.getByLabel('Lab charge (₹)', { exact: true }).fill('500');
