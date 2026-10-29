@@ -85,15 +85,25 @@ test('appointment and billing fees filter procedures by department and default t
   await expect(page.getByLabel('Payment mode', { exact: true })).toHaveValue('CASH');
   await page.getByRole('checkbox', { name: /^Clinic fee/ }).check();
   await page.getByRole('checkbox', { name: 'General Dentistry Bill', exact: true }).check();
-  await expect(page.getByLabel('General Dentistry procedure').locator('option')).toHaveCount(2);
-  await page.getByLabel('General Dentistry procedure').selectOption(charges[0].id);
+  await expect(page.getByLabel('General Dentistry procedure', { exact: true }).locator('option')).toHaveCount(2);
+  await page.getByLabel('Search General Dentistry procedures', { exact: true }).fill('not a procedure');
+  await expect(page.getByLabel('General Dentistry procedure', { exact: true }).locator('option')).toHaveCount(1);
+  await expect(page.getByText('No matching procedures. Try another search.', { exact: true })).toBeVisible();
+  await page.getByLabel('Search General Dentistry procedures', { exact: true }).fill('BROWSER SUBGROUP 0');
+  await expect(page.getByLabel('General Dentistry procedure', { exact: true }).locator('option')).toHaveCount(2);
+  await page.getByLabel('General Dentistry procedure', { exact: true }).selectOption(charges[0].id);
   await page.getByRole('button', { name: 'Add general dentistry procedure', exact: true }).click();
   await page.getByLabel('Treating doctor for Browser procedure 0').selectOption(doctor.id);
   await page.getByRole('checkbox', { name: 'Speciality Treatment Bill', exact: true }).check();
   for (const index of [1, 2, 3]) {
     await page.getByLabel('Department', { exact: true }).selectOption(departments[index]);
-    await expect(page.getByLabel('Speciality procedure').locator('option')).toHaveCount(2);
-    await page.getByLabel('Speciality procedure').selectOption(charges[index].id);
+    await expect(page.getByLabel('Speciality procedure', { exact: true }).locator('option')).toHaveCount(2);
+    await expect(page.getByLabel('Search Speciality procedures', { exact: true })).toHaveValue('');
+    await page.getByLabel('Search Speciality procedures', { exact: true }).fill('procedure 0');
+    await expect(page.getByLabel('Speciality procedure', { exact: true }).locator('option')).toHaveCount(1);
+    await expect(page.getByLabel('Search General Dentistry procedures', { exact: true })).toHaveValue('BROWSER SUBGROUP 0');
+    await page.getByLabel('Search Speciality procedures', { exact: true }).fill(`PROCEDURE ${index}`);
+    await page.getByLabel('Speciality procedure', { exact: true }).selectOption(charges[index].id);
     await page.getByRole('button', { name: 'Add speciality procedure', exact: true }).click();
     await page.getByLabel(`Treating doctor for Browser procedure ${index}`).selectOption(doctor.id);
   }
@@ -119,7 +129,8 @@ test('appointment and billing fees filter procedures by department and default t
   await dialog.getByLabel('Patient', { exact: true }).selectOption(patient.id);
   await dialog.getByRole('checkbox', { name: /^Clinic fee/ }).check();
   await dialog.getByRole('checkbox', { name: 'General Dentistry Bill', exact: true }).check();
-  await dialog.getByLabel('General Dentistry procedure').selectOption(charges[0].id);
+  await dialog.getByLabel('Search General Dentistry procedures', { exact: true }).fill('procedure 0');
+  await dialog.getByLabel('General Dentistry procedure', { exact: true }).selectOption(charges[0].id);
   await dialog.getByRole('button', { name: 'Add general dentistry procedure', exact: true }).click();
   await dialog.getByLabel('Treating doctor for Browser procedure 0').selectOption(doctor.id);
   await expect(dialog.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('420');
