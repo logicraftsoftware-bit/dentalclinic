@@ -19,7 +19,7 @@ export function feePayload(value: FeeSelection, total: number, checkoutKey: stri
   return { checkoutKey, clinicFee: value.clinicFee, lines: value.lines.map(({ key, ...line }) => line), payment: { status: value.status, method: value.method, amountPaise: value.status === 'PENDING' ? 0 : value.status === 'PAID' ? total : Math.round(Number(value.amount || 0) * 100) } };
 }
 
-export function FeeSelectionFields({ value, onChange, charges, groups, doctors, extraTotal = 0 }: { value: FeeSelection; onChange: (value: FeeSelection) => void; charges: any[]; groups: any[]; doctors: any[]; extraTotal?: number }) {
+export function FeeSelectionFields({ value, onChange, charges, groups, doctors, extraTotal = 0, showPayment = true, showClinicFee = true }: { value: FeeSelection; onChange: (value: FeeSelection) => void; charges: any[]; groups: any[]; doctors: any[]; extraTotal?: number; showPayment?: boolean; showClinicFee?: boolean }) {
   const [generalCharge, setGeneralCharge] = useState(''), [specialCharge, setSpecialCharge] = useState('');
   const total = feeTotal(value, charges, extraTotal);
   const update = (patch: Partial<FeeSelection>) => onChange({ ...value, ...patch });
@@ -37,7 +37,7 @@ export function FeeSelectionFields({ value, onChange, charges, groups, doctors, 
   return <>
     <fieldset className="fee-selection"><legend>Fees</legend>
       <div className="fee-type-options">
-        <label className="appointment-fee-option"><input type="checkbox" checked={value.clinicFee} onChange={e => update({ clinicFee: e.target.checked })} /><span>Clinic fee<strong>{money(30000)}</strong></span></label>
+        {showClinicFee && <label className="appointment-fee-option"><input type="checkbox" checked={value.clinicFee} onChange={e => update({ clinicFee: e.target.checked })} /><span>Clinic fee<strong>{money(30000)}</strong></span></label>}
         <label className="appointment-fee-option"><input type="checkbox" checked={value.general} onChange={e => { setGeneralCharge(''); update({ general: e.target.checked, lines: value.lines.filter(l => l.department !== chargeDepartments[0]) }); }} /><span>General Dentistry Bill</span></label>
         <label className="appointment-fee-option"><input type="checkbox" checked={value.speciality} onChange={e => { setSpecialCharge(''); update({ speciality: e.target.checked, department: '', lines: value.lines.filter(l => l.department === chargeDepartments[0]) }); }} /><span>Speciality Treatment Bill</span></label>
       </div>
@@ -49,11 +49,11 @@ export function FeeSelectionFields({ value, onChange, charges, groups, doctors, 
       })}
       <p className="appointment-selection" aria-live="polite">Total fees: <strong>{money(total)}</strong></p>
     </fieldset>
-    <fieldset><legend>Payment</legend><div className="form-fields">
+    {showPayment && <fieldset><legend>Payment</legend><div className="form-fields">
       <label>Payment status<select aria-label="Payment status" value={value.status} onChange={e => update({ status: e.target.value, amount: e.target.value === 'PARTIAL' ? '' : null })}><option value="PAID">Paid</option><option value="PARTIAL">Part paid</option><option value="PENDING">Unpaid</option></select></label>
       <label>Payment mode<select aria-label="Payment mode" disabled={value.status === 'PENDING'} value={value.method} onChange={e => update({ method: e.target.value })}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method === 'CASH' ? 'Cash' : method === 'CARD' ? 'Card' : method === 'BANK' ? 'Bank transfer' : method}</option>)}</select></label>
       <label>Paid amount (₹)<input type="number" min={value.status === 'PARTIAL' ? '0.01' : '0'} max={value.status === 'PARTIAL' ? Math.max(0, total - 1) / 100 : total / 100} step="0.01" required disabled={value.status === 'PENDING'} value={value.status === 'PENDING' ? '0' : value.status === 'PAID' ? String(total / 100) : value.amount ?? ''} onChange={e => update({ amount: e.target.value, status: e.target.value !== '' && Math.round(Number(e.target.value) * 100) === total ? 'PAID' : 'PARTIAL' })} /></label>
-    </div><p>Balance: {money(total - (value.status === 'PENDING' ? 0 : value.status === 'PAID' ? total : Math.round(Number(value.amount ?? total / 100) * 100)))}</p></fieldset>
+    </div><p>Balance: {money(total - (value.status === 'PENDING' ? 0 : value.status === 'PAID' ? total : Math.round(Number(value.amount ?? total / 100) * 100)))}</p></fieldset>}
   </>;
 }
 
