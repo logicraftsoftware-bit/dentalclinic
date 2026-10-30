@@ -3722,7 +3722,7 @@ td .text-button {
 .accounts-table { min-width: 1250px; font-size: 12px; }
 .accounts-table th { background: #f3f7f8; font-size: 10px; text-transform: uppercase; letter-spacing: .25px; white-space: nowrap; }
 .accounts-table td { color: #17233f; padding-top: 16px; padding-bottom: 16px; }
-.accounts-table td:nth-last-child(-n+9) { white-space: nowrap; overflow-wrap: normal; word-break: normal; min-width: 100px; }
+.accounts-table td { white-space: nowrap; overflow-wrap: normal; word-break: normal; min-width: 100px; }
 .accounts-table th:nth-last-child(6), .accounts-table td:nth-last-child(6) { background: #eefaf4; color: #00855f; }
 .accounts-table th:nth-last-child(5), .accounts-table td:nth-last-child(5) { background: #f0f8ff; color: #1681ed; }
 .accounts-table th:nth-last-child(4), .accounts-table td:nth-last-child(4) { background: #f8f3ff; color: #8050d8; }
@@ -4013,3 +4013,18 @@ td .text-button {
 .category-bill .category-payment-fields { margin-top: 24px; }
 .category-bill-number { overflow-wrap: anywhere; }
 @media(max-width: 540px) { .category-bill-totals { grid-template-columns: 1fr; } }
+.accounts-page .accounts-table { min-width: 720px; table-layout: auto; }
+.accounts-page .accounts-table th, .accounts-page .accounts-table td { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.accounts-page .accounts-table th:nth-child(n), .accounts-page .accounts-table td:nth-child(n) { background: transparent; color: inherit; }
+.accounts-page .accounts-table tfoot { background: #f0f7f3; }
+.accounts-page .accounts-table .accounts-clinic-amount { color: #176c5a; font-weight: 700; }
+.accounts-page .accounts-table th:first-child, .accounts-page .accounts-table td:first-child { white-space: normal; }
+.accounts-export-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.accounts-detail-toggle { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-size: 13px; }
+.accounts-detail-toggle input { width: auto; }
+.accounts-page .accounts-method-table { min-width: 480px; }
+.accounts-page .accounts-metric strong { white-space: nowrap; }
+.accounts-tabs { overflow-x: auto; }
+.accounts-page > .accounts-metrics { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.accounts-audit-details { margin-top: 24px; }
+.accounts-audit-details > summary { cursor: pointer; font-weight: 600; padding: 16px; }
