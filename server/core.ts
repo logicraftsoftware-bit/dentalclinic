@@ -163,81 +163,59 @@ export class TenantStore {
     } = {},
   ) {}
   private readonly restrictions = new Map<OwnedModel, Promise<Record<string, unknown>>>();
+  // Reuse scope lookups only within this request/transaction. Never cache permissions across requests.
+  private readonly scopeReads = new Map<string, Promise<any>>();
+  private scopeRead<T>(key: string, read: () => Promise<T>): Promise<T> {
+    if (!this.scopeReads.has(key)) this.scopeReads.set(key, read());
+    return this.scopeReads.get(key)!;
+  }
+  private ids(model: OwnedModel, condition: any): Promise<string[]> {
+    return this.scopeRead(JSON.stringify([model, condition]), async () =>
+      (await this.model(model).findMany({ where: { tenantId: this.tenantId, ...condition }, select: { id: true } })).map((r: any) => r.id));
+  }
+  private patientWhere(): Promise<any> {
+    return this.scopeRead('patientWhere', async () => {
+      const { branchId, doctorId } = this.scope;
+      const [visits, referrals, doctorVisits] = await Promise.all([
+        branchId ? this.model('appointment').findMany({ where: { tenantId: this.tenantId, branchId, ...(doctorId ? { doctorId } : {}) }, select: { patientId: true } }) : [],
+        // Doctor branch visits above already include every referral appointment for that doctor.
+        branchId && !doctorId ? this.model('internalReferral').findMany({ where: { tenantId: this.tenantId, targetBranchId: branchId }, select: { patientId: true } }) : [],
+        doctorId ? this.model('appointment').findMany({ where: { tenantId: this.tenantId, doctorId }, select: { patientId: true } }) : [],
+      ]);
+      const where: any = branchId ? { OR: [{ branchId }, { id: { in: [...new Set([...visits, ...referrals].map((r: any) => r.patientId))] } }] } : {};
+      if (doctorId) where.AND = [{ OR: [{ doctorId }, { id: { in: [...new Set(doctorVisits.map((r: any) => r.patientId))] } }] }];
+      return where;
+    });
+  }
   private async restriction(name: OwnedModel) {
     const { branchId, doctorId } = this.scope;
-    let restriction: any = {};
-    if (branchId || doctorId) {
-      const ids = async (model: OwnedModel, condition: any) =>
-        (
-          await this.model(model).findMany({
-            where: { tenantId: this.tenantId, ...condition },
-            select: { id: true },
-          })
-        ).map((r: any) => r.id);
-      // A scheduled visit or referral shares the patient with the receiving branch.
-      const visitPatients = branchId ? await this.model('appointment').findMany({ where: { tenantId: this.tenantId, branchId, ...(doctorId ? { doctorId } : {}) }, select: { patientId: true } }) : [];
-      const referralPatients = branchId ? (doctorId
-        ? await this.model('appointment').findMany({ where: { tenantId: this.tenantId, branchId, doctorId, referralId: { not: null } }, select: { patientId: true } })
-        : await this.model('internalReferral').findMany({ where: { tenantId: this.tenantId, targetBranchId: branchId }, select: { patientId: true } })) : [];
-      const patientWhere: any = branchId ? { OR: [{ branchId }, { id: { in: [...visitPatients, ...referralPatients].map((r: any) => r.patientId) } }] } : {};
-      if (doctorId) {
-        const appointments = await this.model('appointment').findMany({
-          where: { tenantId: this.tenantId, doctorId },
-          select: { patientId: true },
-        });
-        patientWhere.AND = [{ OR: [{ doctorId }, { id: { in: appointments.map((a: any) => a.patientId) } }] }];
-      }
-      if (name === 'branch') restriction = branchId ? { id: branchId } : {};
-      else if (name === 'doctor') restriction = doctorId ? { id: doctorId } : { OR: [{ branchId }, { branchIds: { has: branchId } }] };
-      else if (name === 'patient') restriction = patientWhere;
-      else if (name === 'internalReferral') restriction = {
-        ...(doctorId ? { OR: [{ fromDoctorId: doctorId }, { toDoctorId: doctorId }] } : {}),
-        ...(branchId ? { AND: [{ OR: [{ sourceBranchId: branchId }, { targetBranchId: branchId }] }] } : {}),
-      };
-      else if (name === 'appointment')
-        restriction = {
-          ...(branchId ? { branchId } : {}),
-          ...(doctorId ? { doctorId } : {}),
-          patientId: { in: await ids('patient', patientWhere) },
-        };
-      else if (
-        [
-          'dentalEncounter',
-          'clinicalNote',
-          'chartVersion',
-          'treatmentPlan',
-          'invoice',
-          'document',
-          'prescription',
-          'followUp',
-          'communication',
-          'treatmentItem',
-          'treatmentSession',
-          'payment',
-          'patientAdjustment',
-          'commission',
-        ].includes(name)
-      ) {
-        const patients = await ids('patient', patientWhere);
-        restriction = { patientId: { in: patients } };
-        if (['treatmentItem', 'treatmentSession'].includes(name)) {
-          const plans = await ids('treatmentPlan', { patientId: { in: patients } });
-          restriction =
-            name === 'treatmentItem'
-              ? { planId: { in: plans } }
-              : { itemId: { in: await ids('treatmentItem', { planId: { in: plans } }) } };
-        }
-        if (['payment', 'commission'].includes(name)) {
-          const invoices = await ids('invoice', { patientId: { in: patients } });
-          restriction =
-            name === 'payment'
-              ? { invoiceId: { in: invoices } }
-              : { paymentId: { in: await ids('payment', { invoiceId: { in: invoices } }) } };
-        }
-      }
+    if (!branchId && !doctorId) return {};
+    if (name === 'branch') return branchId ? { id: branchId } : {};
+    if (name === 'doctor') return doctorId ? { id: doctorId } : { OR: [{ branchId }, { branchIds: { has: branchId } }] };
+    if (name === 'internalReferral') return {
+      ...(doctorId ? { OR: [{ fromDoctorId: doctorId }, { toDoctorId: doctorId }] } : {}),
+      ...(branchId ? { AND: [{ OR: [{ sourceBranchId: branchId }, { targetBranchId: branchId }] }] } : {}),
+    };
+    const patientModels = ['appointment', 'dentalEncounter', 'clinicalNote', 'chartVersion', 'treatmentPlan', 'invoice', 'document', 'prescription', 'followUp', 'communication', 'treatmentItem', 'treatmentSession', 'payment', 'patientAdjustment', 'commission'];
+    // Shared masters and audit/idempotency records do not depend on patient visibility.
+    if (name !== 'patient' && !patientModels.includes(name)) return {};
+    const patientWhere = await this.patientWhere();
+    if (name === 'patient') return patientWhere;
+    const patients = await this.ids('patient', patientWhere);
+    if (name === 'appointment') return {
+      ...(branchId ? { branchId } : {}), ...(doctorId ? { doctorId } : {}), patientId: { in: patients },
+    };
+    if (['treatmentItem', 'treatmentSession'].includes(name)) {
+      const plans = await this.ids('treatmentPlan', { patientId: { in: patients } });
+      return name === 'treatmentItem' ? { planId: { in: plans } } : { itemId: { in: await this.ids('treatmentItem', { planId: { in: plans } }) } };
     }
-    return restriction;
+    if (['payment', 'commission'].includes(name)) {
+      const invoices = await this.ids('invoice', { patientId: { in: patients } });
+      return name === 'payment' ? { invoiceId: { in: invoices } } : { paymentId: { in: await this.ids('payment', { invoiceId: { in: invoices } }) } };
+    }
+    return { patientId: { in: patients } };
   }
+  private clearScope() { this.restrictions.clear(); this.scopeReads.clear(); }
   private async filter(name: OwnedModel, where: Record<string, unknown>) {
     if (!this.restrictions.has(name)) this.restrictions.set(name, this.restriction(name));
     return { tenantId: this.tenantId, AND: [{ ...where, tenantId: this.tenantId }, await this.restrictions.get(name)] };
@@ -356,7 +334,7 @@ export class TenantStore {
     data = this.scopedData(name, data, true);
     await this.validateReferences(name, data);
     const row = await this.model(name).create({ data: { ...data, tenantId: this.tenantId } });
-    this.restrictions.clear();
+    this.clearScope();
     return row;
   }
   async update(name: OwnedModel, recordId: string, data: Record<string, unknown>) {
@@ -367,7 +345,7 @@ export class TenantStore {
     }
     Object.assign(safe, this.scopedData(name, safe));
     await this.validateReferences(name, { ...existing, ...safe });
-    this.restrictions.clear();
+    this.clearScope();
     return this.model(name).update({
       where: { tenantId_id: { tenantId: this.tenantId, id: recordId } },
       data: safe,
@@ -375,7 +353,7 @@ export class TenantStore {
   }
   async remove(name: OwnedModel, recordId: string) {
     await this.get(name, recordId);
-    this.restrictions.clear();
+    this.clearScope();
     return this.model(name).delete({
       where: { tenantId_id: { tenantId: this.tenantId, id: recordId } },
     });

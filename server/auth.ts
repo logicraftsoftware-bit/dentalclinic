@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { db, transaction, lock, opaque, hash, assert, prod, authenticate, text, id } from './core.js';
+import { db, transaction, lock, opaque, hash, assert, prod, authenticate, text, id, clinic } from './core.js';
 import { sendToken } from './mail.js';
+import { workspaceData } from './workspace.js';
 
 export const auth = Router();
 const password = z.string().min(12).max(128);
@@ -172,6 +173,9 @@ auth.get(
     });
     res.json({
       ...actor,
+      ...(req.query.workspace === 'true' && actor.tenantId ? {
+        workspace: await clinic(actor, 'dashboard', async ctx => workspaceData(ctx), { accessOnly: true, readOnly: true, hostname: req.hostname }),
+      } : {}),
       memberships: memberships.map((m) => ({
         tenantId: m.tenantId,
         role: m.role,

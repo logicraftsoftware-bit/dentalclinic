@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, clearApiReads } from '../web/api.js';
+import { api, clearApiReads, primeApiRead } from '../web/api.js';
 
 test('API reads share requests, reuse results, and invalidate across mutations and failures', async () => {
   const originalFetch = globalThis.fetch;
@@ -31,5 +31,11 @@ test('API reads share requests, reuse results, and invalidate across mutations a
     fail = false;
     await api('/clinic/doctors');
     assert.equal(calls, 7);
+    primeApiRead('/clinic/workspace', { tenant: { id: 'current-clinic' } });
+    assert.deepEqual(await api('/clinic/workspace'), { tenant: { id: 'current-clinic' } });
+    assert.equal(calls, 7);
+    await api('/auth/logout', 'POST', {});
+    await api('/clinic/workspace');
+    assert.equal(calls, 9);
   } finally { globalThis.fetch = originalFetch; clearApiReads(); }
 });

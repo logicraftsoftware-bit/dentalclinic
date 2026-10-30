@@ -100,3 +100,26 @@ test('database diagnostics classify failures without exposing credentials or que
   assert(!JSON.stringify(diagnostic).includes('secret'));
   assert.equal(databaseDiagnostic({ message: 'Server selection timed out' }).reason, 'DATABASE_CONNECTION_FAILED');
 });
+
+test('branch reads share patient visibility lookups and masters skip patient scans', async () => {
+  const calls: { model: string; query: any }[] = [];
+  const tx: any = new Proxy({}, { get: (_target, model: string) => ({
+    findMany: async (query: any) => { calls.push({ model, query }); return [{ id: 'p1', patientId: 'p1' }]; },
+    create: async (query: any) => query.data,
+  }) });
+  const store = new TenantStore(tx, 'clinic', { branchId: 'branch' });
+  await store.list('catalogItem');
+  assert.deepEqual(calls.map(c => c.model), ['catalogItem']);
+  await Promise.all(['invoice', 'payment', 'patientAdjustment', 'patient'].map(model => store.list(model as any)));
+  assert.equal(calls.length, 9);
+  assert.equal(calls.filter(c => c.model === 'appointment').length, 1);
+  assert.equal(calls.filter(c => c.model === 'internalReferral').length, 1);
+  assert.equal(calls.filter(c => c.model === 'patient').length, 2); // visible IDs and requested patient records
+  for (const call of calls) assert.equal(call.query.where.tenantId, 'clinic');
+  await store.create('clinicAudit', { action: 'test' });
+  await store.list('invoice');
+  assert.equal(calls.filter(c => c.model === 'appointment').length, 2);
+  // A different request starts with fresh scope checks, even for the same clinic.
+  await new TenantStore(tx, 'clinic', { branchId: 'branch' }).list('invoice');
+  assert.equal(calls.filter(c => c.model === 'appointment').length, 3);
+});

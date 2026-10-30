@@ -241,6 +241,9 @@ model Patient {
   communications Communication[]
   @@unique([tenantId, id])
   @@index([tenantId, name])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, branchId])
+  @@index([tenantId, doctorId])
 }
 model Appointment {
   id String @id @default(uuid()) @map("_id")
@@ -265,6 +268,9 @@ model Appointment {
   branch Branch? @relation(fields: [branchId], references: [id])
   @@unique([tenantId, id])
   @@index([tenantId, startsAt])
+  @@index([tenantId, patientId])
+  @@index([tenantId, branchId, startsAt])
+  @@index([tenantId, doctorId, startsAt])
 }
 model ClinicalNote {
   id String @id @default(uuid()) @map("_id")
@@ -332,6 +338,7 @@ model TreatmentItem {
   sessions TreatmentSession[]
   @@unique([tenantId, id])
   @@index([tenantId])
+  @@index([tenantId, planId])
 }
 model TreatmentSession {
   id String @id @default(uuid()) @map("_id")
@@ -347,6 +354,7 @@ model TreatmentSession {
   invoices Invoice[]
   @@unique([tenantId, id])
   @@index([tenantId])
+  @@index([tenantId, itemId])
 }
 model Invoice {
   id String @id @default(uuid()) @map("_id")
@@ -370,8 +378,11 @@ model Invoice {
   payments Payment[]
   @@unique([tenantId, id])
   @@index([tenantId, sessionId])
+  @@index([tenantId, createdAt])
   @@unique([tenantId, sourceKey])
   @@index([tenantId])
+  @@index([tenantId, patientId])
+  @@index([tenantId, appointmentId])
 }
 model Payment {
   id String @id @default(uuid()) @map("_id")
@@ -386,7 +397,9 @@ model Payment {
   commissions Commission[]
   @@unique([tenantId, id])
   @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
+  @@index([tenantId, invoiceId])
 }
 // Append-only patient credit ledger. Original invoices and receipts are retained.
 model PatientAdjustment {

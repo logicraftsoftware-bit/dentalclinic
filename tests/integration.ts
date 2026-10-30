@@ -111,6 +111,29 @@ test('registration is idempotent and clinic sessions run concurrently', async ()
     [patientB.id],
   );
 });
+test('billing snapshot and startup workspace stay consistent and clinic scoped', async () => {
+  const clinic = await register('Fast billing clinic');
+  const patient = (await request('/clinic/patients', 'POST', { name: 'Snapshot patient', phone: '9000099991' }, clinic.cookie)).data;
+  const invoice = await request('/clinic/invoices', 'POST', { patientId: patient.id, description: 'Snapshot bill', totalPaise: 50000 }, clinic.cookie);
+  assert.equal(invoice.status, 201);
+  const paid = await request('/clinic/payments', 'POST', { invoiceId: invoice.data.id, amountPaise: 20000, method: 'CASH', idempotencyKey: randomUUID() }, clinic.cookie);
+  assert.equal(paid.status, 201);
+  const snapshot = await request('/clinic/billing-desk', 'GET', undefined, clinic.cookie);
+  assert.equal(snapshot.status, 200);
+  assert.equal(snapshot.data.invoices.length, 1);
+  assert.equal(snapshot.data.invoices[0].id, invoice.data.id);
+  assert.equal(snapshot.data.patients[0].name, patient.name);
+  assert.equal(snapshot.data.totals.outstandingPaise, 30000);
+  assert.deepEqual(snapshot.data.totals, (await request('/clinic/billing-totals', 'GET', undefined, clinic.cookie)).data);
+  const foreign = await request('/clinic/billing-desk', 'GET', undefined, b.cookie);
+  assert(!foreign.data.invoices.some((i: any) => i.id === invoice.data.id));
+  assert(!foreign.data.patients.some((p: any) => p.id === patient.id));
+  const bootstrap = await request('/auth/me?workspace=true', 'GET', undefined, clinic.cookie);
+  assert.equal(bootstrap.status, 200);
+  assert.deepEqual(bootstrap.data.workspace, (await request('/clinic/workspace', 'GET', undefined, clinic.cookie)).data);
+  assert.equal(bootstrap.data.workspace.tenant.id, clinic.tenantId);
+});
+
 test('cross-tenant detail, update, search and exports are denied', async () => {
   assert.equal(
     (await request(`/clinic/patients/${patientB.id}`, 'GET', undefined, a.cookie)).status,

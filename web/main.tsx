@@ -48,7 +48,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { api, money, day, initials } from './api';
+import { primeApiRead, api, money, day, initials } from './api';
 import './style.css';
 import './billing-theme.css';
 import '@fontsource/dm-sans/400.css';
@@ -254,16 +254,20 @@ function App() {
     }
   };
   useEffect(() => {
-    Promise.all([
+    if (route.area !== 'public') return;
+    void Promise.all([
       api('/public/plans').then(setPublicPlans).catch(() => {}),
       api('/public/settings').then(setPublicSettings).catch(() => {}),
-      api('/auth/me')
+    ]);
+  }, [route.area]);
+  useEffect(() => {
+    api('/auth/me?workspace=true')
         .then((u) => {
+          if (u.workspace) { primeApiRead('/clinic/workspace', u.workspace); setWorkspace(u.workspace); }
           setMe(u);
         })
         .catch(() => {})
-        .finally(() => setReady(true)),
-    ]);
+        .finally(() => setReady(true));
   }, []);
   useEffect(() => {
     if (me?.tenantId)
@@ -287,7 +291,8 @@ function App() {
       })
       .catch(() => {});
   const signedIn = async () => {
-    const u = await api('/auth/me');
+    const u = await api('/auth/me?workspace=true');
+    if (u.workspace) { primeApiRead('/clinic/workspace', u.workspace); setWorkspace(u.workspace); }
     setMe(u);
     go(!route.next && u.memberships?.find((m: any) => m.tenantId === u.tenantId)?.role === 'DOCTOR' ? '/clinic/appointments' : loginDestination(route.next, u), true);
   };
@@ -1165,16 +1170,16 @@ function Billing({ tick, modal, action, go, notify }: any) {
   const [creatingBill, setCreatingBill] = useState(false);
   const [cancellingInvoice, setCancellingInvoice] = useState<any>(null);
   const [creditPatient, setCreditPatient] = useState('');
-  const { data: billingTotals } = useData('/clinic/billing-totals', tick);
+  const { data: billingData, error } = useData('/clinic/billing-desk', tick);
+  const billingTotals = billingData?.totals, data = billingData?.invoices, patients = billingData?.patients, payments = billingData?.payments;
   const [invoiceTab, setInvoiceTab] = useState('ALL');
   const [showFilters, setShowFilters] = useState(false);
   const [billingSearch, setBillingSearch] = useState('');
-  const { data, error } = useData('/clinic/invoices', tick);
-  const { data: patients } = useData('/clinic/patients', tick);
-  const { data: payments } = useData('/clinic/payments', tick);
+
+  const patientById = new Map<string, any>((patients || []).map((p: any) => [p.id, p]));
   const query = billingSearch.trim().toLowerCase();
   const visible = data?.filter((i: any) => {
-    const patient = patients?.find((p: any) => p.id === i.patientId);
+    const patient = patientById.get(i.patientId);
     if (invoiceTab !== 'ALL' && (invoiceTab === 'UNPAID' ? !['UNPAID', 'PENDING'].includes(i.status) : i.status !== invoiceTab)) return false;
     return !query || `${patient?.name || ''} ${patient?.phone || ''} ${patient?.id || i.patientId}`.toLowerCase().includes(query);
   });
@@ -1239,11 +1244,11 @@ function Billing({ tick, modal, action, go, notify }: any) {
                 {!visible.length && <tr><td colSpan={6}>No invoices match your search.</td></tr>}
                 {visible.map((i: any) => (
                   <tr key={i.id}>
-                    <td><div className="billing-patient"><span className="billing-patient-avatar">{initials(patients?.find((p: any) => p.id === i.patientId)?.name || 'Patient').slice(0, 1)}</span><div>
+                    <td><div className="billing-patient"><span className="billing-patient-avatar">{initials(patientById.get(i.patientId)?.name || 'Patient').slice(0, 1)}</span><div>
                       <strong>
-                        {patients?.find((p: any) => p.id === i.patientId)?.name || 'Patient'}
+                        {patientById.get(i.patientId)?.name || 'Patient'}
                       </strong>
-                      <small>{patients?.find((p: any) => p.id === i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>{i.description}</small></div></div>
+                      <small>{patientById.get(i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>{i.description}</small></div></div>
                     </td>
                     <td>{money(i.totalPaise)}</td>
                     <td>{money(i.paidPaise)}</td>
@@ -1267,7 +1272,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
                           printInvoice(
                             i,
                             workspaceSafe(),
-                            patients?.find((p: any) => p.id === i.patientId),
+                            patientById.get(i.patientId),
                             payments?.filter((p: any) => p.invoiceId === i.id),
                           ).catch((error: Error) => notify(error.message, 'error'))
                         }

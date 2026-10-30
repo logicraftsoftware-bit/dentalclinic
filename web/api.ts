@@ -2,6 +2,9 @@
 const reads = new Map<string, { promise: Promise<any>; expiresAt: number }>();
 const READ_TTL_MS = 15_000;
 export function clearApiReads() { reads.clear(); }
+export function primeApiRead(url: string, value: any) {
+  reads.set(url, { promise: Promise.resolve(value), expiresAt: Date.now() + READ_TTL_MS });
+}
 export function api<T = any>(url: string, method = 'GET', body?: unknown): Promise<T> {
   if (method !== 'GET') {
     clearApiReads();

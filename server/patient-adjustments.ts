@@ -5,8 +5,7 @@ import { procedureKey } from '../shared/procedure-key.js';
 import { recordCheckoutPayment } from './patient-payments.js';
 
 export const creditBalance = (entries: any[]) => entries.reduce((n, entry) => n + entry.amountPaise, 0);
-export async function billingTotals(store: any) {
-  const [invoices, payments, adjustments] = await Promise.all([store.list('invoice'), store.list('payment'), store.list('patientAdjustment')]);
+export function totalsFromRecords(invoices: any[], payments: any[], adjustments: any[]) {
   const active = invoices.filter((i: any) => i.status !== 'CANCELLED');
   const refundedPaise = -adjustments.filter((e: any) => e.type === 'REFUND').reduce((n: number, e: any) => n + e.amountPaise, 0);
   return {
@@ -15,6 +14,10 @@ export async function billingTotals(store: any) {
     collectedPaise: payments.filter((p: any) => p.method !== 'CREDIT').reduce((n: number, p: any) => n + p.amountPaise, 0) - refundedPaise,
     refundedPaise, creditBalancePaise: creditBalance(adjustments), paymentCount: payments.length,
   };
+}
+export async function billingTotals(store: any) {
+  const records = await Promise.all([store.list('invoice'), store.list('payment'), store.list('patientAdjustment')]);
+  return totalsFromRecords(records[0], records[1], records[2]);
 }
 export async function updateVisitBalance(ctx: any, appointmentId?: string | null) {
   if (!appointmentId) return;
@@ -69,6 +72,20 @@ async function spendCredit(ctx: any, patientId: string, targets: any[], common: 
   return creditBalance(ledger) - total;
 }
 export function registerPatientAdjustmentRoutes(router: Router, run: any) {
+  router.get('/billing-desk', run('billing', async (_req: any, res: any, { store }: any) => {
+    // One consistent snapshot and one authorization pass for the billing page.
+    const [invoices, payments, adjustments] = await Promise.all([
+      store.list('invoice', {}, { orderBy: { createdAt: 'desc' } }),
+      store.list('payment', {}, { orderBy: { createdAt: 'desc' } }),
+      store.list('patientAdjustment'),
+    ]);
+    const visibleInvoices = invoices.slice(0, 500);
+    const patientIds = [...new Set(visibleInvoices.map((i: any) => i.patientId))];
+    const patients = patientIds.length ? await store.list('patient', { id: { in: patientIds } }, {
+      select: { id: true, name: true, phone: true, branchId: true, age: true, ageRecordedAt: true, dob: true, gender: true, address: true },
+    }) : [];
+    res.json({ invoices: visibleInvoices, payments: payments.slice(0, 500), patients, totals: totalsFromRecords(invoices, payments, adjustments) });
+  }));
   router.get('/billing-totals', run('billing', async (_req: any, res: any, { store }: any) => {
     res.json(await billingTotals(store));
   }));

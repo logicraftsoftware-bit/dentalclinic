@@ -1,3 +1,4 @@
+import { workspaceData } from './workspace.js';
 import { parsePartial } from './validation.js';
 import { recordInvoicePayment } from './patient-payments.js';
 import { billingTotals, registerPatientAdjustmentRoutes } from './patient-adjustments.js';
@@ -301,28 +302,7 @@ clinicApi.get(
   '/workspace',
   run(
     'dashboard',
-    async (_req: any, res: any, { tenant, subscription, membership }: any) =>
-      res.json({
-        tenant,
-        subscription,
-        role: membership.role,
-        branchId: membership.branchId,
-        doctorId: membership.doctorId,
-        capabilities: [
-          'dashboard',
-          'patients',
-          'appointments',
-          'clinical',
-          'documents',
-          'catalog',
-          'billing',
-          'reports',
-          'commissions',
-          'staff',
-          'doctors',
-          'settings',
-        ].filter((c) => permission(membership.role, c, membership.permissions)),
-      }),
+    async (_req: any, res: any, ctx: any) => res.json(workspaceData(ctx)),
     true,
   ),
 );
