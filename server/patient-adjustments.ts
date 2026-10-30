@@ -4,6 +4,8 @@ import { assert, hash, id, money } from './core.js';
 import { procedureKey } from '../shared/procedure-key.js';
 import { recordCheckoutPayment } from './patient-payments.js';
 import { invoiceBillNumbers } from '../shared/bill-number.js';
+import { categoryBills, categoryCollections } from '../shared/bill-categories.js';
+import { classifiedInvoices } from './invoice-categories.js';
 
 export const creditBalance = (entries: any[]) => entries.reduce((n, entry) => n + entry.amountPaise, 0);
 export function totalsFromRecords(invoices: any[], payments: any[], adjustments: any[]) {
@@ -80,12 +82,15 @@ export function registerPatientAdjustmentRoutes(router: Router, run: any) {
       store.list('payment', {}, { orderBy: { createdAt: 'desc' } }),
       store.list('patientAdjustment'),
     ]);
-    const visibleInvoices = invoiceBillNumbers(invoices, tenant.settings?.timezone || 'Asia/Kolkata').slice(0, 500);
-    const patientIds = [...new Set(visibleInvoices.map((i: any) => i.patientId))];
+    const numbered = invoiceBillNumbers(await classifiedInvoices(store, invoices), tenant.settings?.timezone || 'Asia/Kolkata');
+    const allBills = categoryBills(numbered), bills = allBills.slice(0, 500);
+    const visibleIds = new Set(bills.flatMap((b: any) => b.invoiceIds));
+    const visibleInvoices = numbered.filter(i => visibleIds.has(i.id));
+    const patientIds = [...new Set(bills.map((i: any) => i.patientId))];
     const patients = patientIds.length ? await store.list('patient', { id: { in: patientIds } }, {
       select: { id: true, name: true, phone: true, branchId: true, age: true, ageRecordedAt: true, dob: true, gender: true, address: true },
     }) : [];
-    res.json({ invoices: visibleInvoices, payments: payments.slice(0, 500), patients, totals: totalsFromRecords(invoices, payments, adjustments) });
+    res.json({ bills: bills.map(({ invoices: _invoices, ...bill }: any) => bill), invoices: visibleInvoices, categoryPayments: categoryCollections(allBills, payments).slice(0, 500), payments: payments.slice(0, 500), patients, totals: totalsFromRecords(invoices, payments, adjustments) });
   }));
   router.get('/billing-totals', run('billing', async (_req: any, res: any, { store }: any) => {
     res.json(await billingTotals(store));
@@ -99,7 +104,7 @@ export function registerPatientAdjustmentRoutes(router: Router, run: any) {
     const invoices = await store.list('invoice', { patientId: patient.id });
     const payments = invoices.length ? await store.list('payment', { invoiceId: { in: invoices.map((i: any) => i.id) } }) : [];
     const branch = patient.branchId ? await tx.branch.findFirst({ where: { id: patient.branchId, tenantId: tenant.id }, select: { id: true, name: true, address: true } }) : null;
-    res.json({ patient, branch, entries, invoices, payments, balancePaise: creditBalance(entries) });
+    res.json({ patient, branch, entries, invoices: await classifiedInvoices(store, invoices), payments, balancePaise: creditBalance(entries) });
   }));
   router.post('/procedure-cancellations', run('billing', async (req: any, res: any, ctx: any, actor: any) => {
     const input = z.object({ ...base, invoiceIds }).strict().parse(req.body);

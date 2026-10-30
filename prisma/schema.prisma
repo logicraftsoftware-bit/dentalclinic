@@ -357,6 +357,9 @@ model TreatmentSession {
   @@index([tenantId, itemId])
 }
 model Invoice {
+  billCategory String?
+  department String?
+  catalogItemId String?
   id String @id @default(uuid()) @map("_id")
   tenantId String
   patientId String

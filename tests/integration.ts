@@ -2004,6 +2004,48 @@ test('fee bills use master prices, save appointment payments atomically and scop
   assert.equal((await request('/clinic/fee-bills', 'POST', { ...bill, checkoutKey: randomUUID(), lines: [{ ...lines[0], doctorId: doctorA.id }] }, clinic.cookie)).status, 404);
 });
 
+test('category payments isolate clinic, general and multiple speciality procedures and protect retries', async () => {
+  const clinic = await register('Category payments clinic');
+  async function create(resource: string, body: any) { const result = await request(`/clinic/${resource}`, 'POST', body, clinic.cookie); assert.equal(result.status, 201, JSON.stringify(result.data)); return result.data; }
+  const patient = await create('patients', { name: 'Category patient', phone: '9000018899' });
+  const doctor = await create('doctors', { name: 'Category doctor' });
+  const general = await create('charge-groups', { name: 'General group', groupName: 'General dentistry' });
+  const special = await create('charge-groups', { name: 'Surgery group', groupName: 'Department of Oral Surgery' });
+  const generalCharge = await create('charges', { name: 'Category filling', chargeGroupId: general.id, pricePaise: 10000 });
+  const first = await create('charges', { name: 'Category surgery one', chargeGroupId: special.id, pricePaise: 10000 });
+  const second = await create('charges', { name: 'Category surgery two', chargeGroupId: special.id, pricePaise: 20000, labChargePaise: 2000 });
+  const appointment = await create('appointments', { patientId: patient.id, startsAt: new Date(Date.now() + 86400000).toISOString(), useClinicFee: true,
+    chargeConsultantFee: false, chargeVisitingFee: false, feeBill: { checkoutKey: randomUUID(), clinicFee: true, lines: [
+      { catalogItemId: generalCharge.id, doctorId: doctor.id, department: 'General dentistry' },
+      { catalogItemId: first.id, doctorId: doctor.id, department: 'Department of Oral Surgery' },
+      { catalogItemId: second.id, doctorId: doctor.id, department: 'Department of Oral Surgery' },
+    ], payment: { status: 'PENDING', method: 'CASH', amountPaise: 0 } } });
+  let data = (await request(`/clinic/reception/${appointment.id}`, 'GET', undefined, clinic.cookie)).data;
+  const specialIds = data.invoices.filter((i: any) => i.billCategory === 'SPECIALITY').map((i: any) => i.id);
+  assert.equal(specialIds.length, 3);
+  const generalId = data.invoices.find((i: any) => i.billCategory === 'GENERAL').id;
+  const payload = { checkoutKey: randomUUID(), category: 'SPECIALITY', invoiceIds: specialIds, amountPaise: 12000, discountPaise: 0, method: 'UPI', reference: 'SPECIAL-PARTIAL' };
+  assert.equal((await request('/clinic/category-payments', 'POST', { ...payload, invoiceIds: [...specialIds, generalId] }, clinic.cookie)).status, 400);
+  assert.equal((await request('/clinic/category-payments', 'POST', { ...payload, amountPaise: 32001 }, clinic.cookie)).status, 400);
+  assert.equal((await request('/clinic/category-payments', 'POST', payload, b.cookie)).status, 404);
+  const paid = await create('category-payments', payload);
+  const replay = await request('/clinic/category-payments', 'POST', payload, clinic.cookie);
+  assert.equal(replay.status, 200); assert.deepEqual(replay.data, paid);
+  assert.equal((await request('/clinic/category-payments', 'POST', { ...payload, amountPaise: 1 }, clinic.cookie)).status, 409);
+  data = (await request(`/clinic/reception/${appointment.id}`, 'GET', undefined, clinic.cookie)).data;
+  assert.equal(data.invoices.filter((i: any) => i.billCategory === 'SPECIALITY').reduce((n: number, i: any) => n + i.paidPaise, 0), 12000);
+  assert(data.invoices.filter((i: any) => i.billCategory !== 'SPECIALITY').every((i: any) => i.paidPaise === 0));
+  await db.catalogItem.update({ where: { tenantId_id: { tenantId: clinic.tenantId, id: second.id } }, data: { chargeGroupId: general.id } });
+  await create('category-payments', { ...payload, checkoutKey: randomUUID(), amountPaise: 19000, discountPaise: 1000 });
+  const snapshot = (await request('/clinic/billing-desk', 'GET', undefined, clinic.cookie)).data;
+  assert.equal(snapshot.bills.length, 3);
+  const specialBill = snapshot.bills.find((bill: any) => bill.billCategory === 'SPECIALITY');
+  assert.equal(specialBill.totalPaise, 31000); assert.equal(specialBill.paidPaise, 31000); assert.equal(specialBill.status, 'PAID');
+  assert(snapshot.bills.filter((bill: any) => bill.billCategory !== 'SPECIALITY').every((bill: any) => bill.paidPaise === 0));
+  assert(snapshot.categoryPayments.every((payment: any) => payment.billCategory === 'SPECIALITY'));
+  assert.equal(snapshot.categoryPayments.length, 2);
+});
+
 test('patient registration and edits retain age gender and address without inventing dates of birth', async () => {
   const clinic = await register('Patient demographics clinic');
   const created = await request('/clinic/patients', 'POST', { name: 'Demographics patient', phone: '9000019933', age: 28, gender: 'Female', address: 'GS Road, Guwahati' }, clinic.cookie);

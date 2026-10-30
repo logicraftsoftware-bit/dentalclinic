@@ -1,3 +1,4 @@
+import { categoryMetadata } from '../shared/bill-categories.js';
 import type { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -109,11 +110,13 @@ export function registerDentalRoutes(router: Router, run: any, validateSlot: any
     if (finalize) {
       await tx.patient.update({ where: { tenantId_id: { tenantId: tenant.id, id: patient.id } }, data: { medicalHistory: data.medicalHistory, allergies: data.allergies } });
       const plan = await store.create('treatmentPlan', { patientId: patient.id, title: `Dental visit ${new Date(appointment.startsAt).toISOString().slice(0, 10)}`, status: 'COMPLETED' });
+      const [billingCharges, billingGroups] = await Promise.all([store.list('catalogItem'), store.list('chargeGroup')]);
       for (const [index, line] of data.lines.entries()) {
+        const billingMetadata = categoryMetadata({ description: line.name, catalogItemId: line.catalogItemId }, billingCharges, billingGroups);
         const item = await store.create('treatmentItem', { planId: plan.id, tooth: line.tooth, name: line.name, pricePaise: line.pricePaise, labChargePaise: line.labChargePaise, plannedSessions: 1, status: 'COMPLETED', ...(line.catalogItemId ? { catalogItemId: line.catalogItemId } : {}) });
         const session = await store.create('treatmentSession', { itemId: item.id, doctorId: appointment.doctorId, notes: data.findings || line.name, feePaise: line.pricePaise });
-        if (line.pricePaise) await store.create('invoice', { patientId: patient.id, appointmentId: appointment.id, sessionId: session.id, sourceKey: `${encounter.id}:procedure:${index}`, description: `${line.name} - Tooth ${line.tooth}`, totalPaise: line.pricePaise });
-        if (line.labChargePaise) await store.create('invoice', { patientId: patient.id, appointmentId: appointment.id, sourceKey: `${encounter.id}:lab:${index}`, description: `Lab: ${line.name} - Tooth ${line.tooth}${line.labName ? ' - ' + line.labName : ''}`, totalPaise: line.labChargePaise });
+        if (line.pricePaise) await store.create('invoice', { ...billingMetadata, doctorId: appointment.doctorId, chargeKind: 'PROCEDURE', patientId: patient.id, appointmentId: appointment.id, sessionId: session.id, sourceKey: `${encounter.id}:procedure:${index}`, description: `${line.name} - Tooth ${line.tooth}`, totalPaise: line.pricePaise });
+        if (line.labChargePaise) await store.create('invoice', { ...billingMetadata, doctorId: appointment.doctorId, chargeKind: 'LAB', patientId: patient.id, appointmentId: appointment.id, sourceKey: `${encounter.id}:lab:${index}`, description: `Lab: ${line.name} - Tooth ${line.tooth}${line.labName ? ' - ' + line.labName : ''}`, totalPaise: line.labChargePaise });
       }
       await ensureVisitFees(store, appointment);
       await store.create('clinicalNote', { patientId: patient.id, authorId: actor.userId, complaint: data.complaint, findings: data.findings, diagnosis: data.diagnosis, advice: data.advice });

@@ -1,3 +1,4 @@
+import { categoryLabels, type BillCategory } from '../shared/bill-categories';
 import { patientAge } from '../shared/patient-age';
 import { formatBillNumber } from '../shared/bill-number';
 import { billingLines, procedureCollections } from './billing-lines';
@@ -41,7 +42,7 @@ export function BillReceipt({ data, workspace, zone }: any) {
       </div>
     </header>
     <div className="receipt-title-row">
-      <div><h2>PATIENT BILL / PAYMENT RECEIPT</h2><p>{settings.invoiceHeader || 'Thank you for trusting us with your smile.'}</p></div>
+      <div><h2>{data.billCategory ? `${categoryLabels[data.billCategory as BillCategory].toUpperCase()} BILL / PAYMENT RECEIPT` : 'PATIENT BILL / PAYMENT RECEIPT'}</h2><p>{settings.invoiceHeader || 'Thank you for trusting us with your smile.'}</p></div>
       <dl className="receipt-invoice-meta"><dt>Bill No</dt><dd>{billNumber}</dd><dt>Bill Date</dt><dd>{date(billDate, true)}</dd><dt>Visit Date</dt><dd>{date(appointment.startsAt)}</dd></dl>
     </div>
     <div className="receipt-patient-info">

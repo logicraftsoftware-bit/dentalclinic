@@ -1,3 +1,7 @@
+import { classifiedInvoices } from './invoice-categories.js';
+import { registerCategoryPayments } from './category-payments.js';
+import { categoryMetadata, billCategories } from '../shared/bill-categories.js';
+import { chargeDepartment, chargeDepartments } from '../shared/charge-groups.js';
 import type { Router } from 'express';
 import { z } from 'zod';
 import { assert, id, money, hash } from './core.js';
@@ -34,8 +38,10 @@ async function saveReceptionBill(store: any, appointment: any, input: z.infer<ty
       assert(doctor.active && (!appointment.branchId || doctorAvailableAt(doctor, appointment.branchId)), 400, 'Choose an active doctor from this appointment branch.');
     }
     await ensureVisitFees(store, appointment);
+    const [charges, groups] = await Promise.all([store.list('catalogItem'), store.list('chargeGroup')]);
     for (const [index, line] of input.lines.entries()) {
-      const base = { patientId: appointment.patientId, appointmentId: appointment.id, doctorId: line.doctorId };
+      const metadata = categoryMetadata({ description: line.name }, charges, groups);
+      const base = { ...metadata, patientId: appointment.patientId, appointmentId: appointment.id, doctorId: line.doctorId };
       if (line.chargePaise) await store.create('invoice', { ...base, sourceKey: `${prefix}${index}:procedure`, chargeKind: 'PROCEDURE', description: line.name, totalPaise: line.chargePaise });
       if (line.labChargePaise) await store.create('invoice', { ...base, sourceKey: `${prefix}${index}:lab`, chargeKind: 'LAB', description: `Lab: ${line.name}`, totalPaise: line.labChargePaise });
     }
@@ -58,14 +64,29 @@ async function createCheckoutCharges({ store, tx, tenant }: any, appointment: an
   const invoices = await store.list('invoice', { appointmentId: appointment.id });
   const base = { tenantId: tenant.id, patientId: appointment.patientId, appointmentId: appointment.id };
   const rows: any[] = [];
-  const fees = [['Consultant fee', appointment.consultationPaise], ['Visiting consultant fee', appointment.visitingConsultationPaise], ['Clinic fee', appointment.clinicFeePaise]];
-  for (const [index, [description, amount]] of fees.entries()) {
-    if (Number(amount) > 0 && !invoices.some((i: any) => i.description === description)) rows.push({ ...base, sourceKey: `${appointment.id}:fee:${index}`, description: String(description), chargeKind: 'VISIT', totalPaise: Number(amount) });
+  const fees = [['Consultant fee', appointment.consultationPaise], ['Visiting consultant fee', appointment.visitingConsultationPaise], ['Clinic fee', appointment.clinicFeePaise || (input.addClinicFee ? 30000 : 0)]];
+  if (input.addClinicFee && !appointment.clinicFeePaise) {
+    assert(!input.category || input.category === 'CLINIC', 400, 'Add the clinic fee in its own category.');
+    await tx.appointment.update({ where: { tenantId_id: { tenantId: tenant.id, id: appointment.id } }, data: { useClinicFee: true, clinicFeePaise: 30000 } });
   }
-  for (const [index, line] of input.lines.entries()) {
+  for (const [index, [description, amount]] of fees.entries()) {
+    if (Number(amount) > 0 && !invoices.some((i: any) => i.description === description)) rows.push({ ...base, sourceKey: `${appointment.id}:fee:${index}`, description: String(description), chargeKind: 'VISIT', billCategory: 'CLINIC', totalPaise: Number(amount) });
+  }
+  const [charges, groups] = input.lines.length ? await Promise.all([store.list('catalogItem'), store.list('chargeGroup')]) : [[], []];
+  for (const [index, original] of input.lines.entries()) {
+    let line = original;
+    if (line.catalogItemId) {
+      const charge = charges.find((c: any) => c.id === line.catalogItemId);
+      const group = groups.find((g: any) => g.id === charge?.chargeGroupId);
+      assert(charge?.active && group?.active && (!line.department || chargeDepartment(group) === line.department), 400, 'Choose an active procedure in the selected department.');
+      assert(line.chargePaise === charge.pricePaise && line.labChargePaise === (charge.labChargePaise || 0), 409, 'Procedure prices changed. Reload the billing desk before saving.');
+      line = { ...line, name: charge.name, chargePaise: charge.pricePaise, labChargePaise: charge.labChargePaise || 0, department: chargeDepartment(group) };
+    }
+    const metadata = categoryMetadata({ description: line.name, ...line }, charges, groups);
+    if (input.category) assert(metadata.billCategory === input.category, 400, 'Add procedures to the matching bill category.');
     const prefix = `reception:${appointment.id}:${input.checkoutKey}:${index}`;
-    if (line.chargePaise) rows.push({ ...base, doctorId: line.doctorId, sourceKey: `${prefix}:procedure`, chargeKind: 'PROCEDURE', description: line.name, totalPaise: line.chargePaise });
-    if (line.labChargePaise) rows.push({ ...base, doctorId: line.doctorId, sourceKey: `${prefix}:lab`, chargeKind: 'LAB', description: `Lab: ${line.name}`, totalPaise: line.labChargePaise });
+    if (line.chargePaise) rows.push({ ...base, ...metadata, doctorId: line.doctorId, sourceKey: `${prefix}:procedure`, chargeKind: 'PROCEDURE', description: line.name, totalPaise: line.chargePaise });
+    if (line.labChargePaise) rows.push({ ...base, ...metadata, doctorId: line.doctorId, sourceKey: `${prefix}:lab`, chargeKind: 'LAB', description: `Lab: ${line.name}`, totalPaise: line.labChargePaise });
   }
   if (rows.length) await tx.invoice.createMany({ data: rows });
   assert(rows.length || invoices.length, 400, 'Add a procedure to create a bill.');
@@ -73,6 +94,7 @@ async function createCheckoutCharges({ store, tx, tenant }: any, appointment: an
 }
 
 export function registerReceptionRoutes(router: Router, run: any) {
+  registerCategoryPayments(router, run);
   router.post('/fee-bills', run('billing', async (req: any, res: any, ctx: any, actor: any) => {
     const { patientId, ...input } = feeBillSchema.extend({ patientId: id }).parse(req.body);
     res.status(201).json(await saveFeeBill(ctx, patientId, input, actor));
@@ -89,7 +111,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
     const adjustments = await store.list('patientAdjustment', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } });
     const branchId = patient.branchId || appointment.branchId;
     const branch = branchId ? await tx.branch.findFirst({ where: { id: branchId, tenantId: tenant.id }, select: { id: true, name: true, address: true } }) : null;
-    res.json({ billNumber: formatBillNumber(appointment.id, invoices[0]?.createdAt || appointment.createdAt, tenant.settings?.timezone || 'Asia/Kolkata'), appointment, patient, branch, invoices, payments, adjustments, creditBalancePaise: creditBalance(adjustments),
+    res.json({ billNumber: formatBillNumber(appointment.id, invoices[0]?.createdAt || appointment.createdAt, tenant.settings?.timezone || 'Asia/Kolkata'), appointment, patient, branch, invoices: await classifiedInvoices(store, invoices), payments, adjustments, creditBalancePaise: creditBalance(adjustments),
       doctors: doctors.filter((d: any) => !appointment.branchId || doctorAvailableAt(d, appointment.branchId))
         .map((d: any) => ({ id: d.id, name: d.name, specialty: d.specialty })), charges });
   }));
@@ -155,8 +177,8 @@ export function registerReceptionRoutes(router: Router, run: any) {
     const appointment = await store.get('appointment', id.parse(req.params.id));
     assert(!['ABSENT', 'CANCELLED'].includes(appointment.status), 409, 'Mark this patient present before billing.');
     const input = z.object({
-      checkoutKey: z.string().uuid(),
-      lines: z.array(z.object({ key: z.string().uuid(), name: z.string().trim().min(1).max(200), doctorId: id, chargePaise: money, labChargePaise: money }).strict().refine(v => v.chargePaise + v.labChargePaise > 0, 'Enter a procedure or lab charge.')).max(50),
+      checkoutKey: z.string().uuid(), category: z.enum(billCategories).optional(), addClinicFee: z.boolean().optional(),
+      lines: z.array(z.object({ key: z.string().uuid(), name: z.string().trim().min(1).max(200), doctorId: id, chargePaise: money, labChargePaise: money, catalogItemId: id.optional(), department: z.enum(chargeDepartments).optional() }).strict().refine(v => v.chargePaise + v.labChargePaise > 0, 'Enter a procedure or lab charge.')).max(50),
       settlements: z.array(z.object({
         invoiceIds: z.array(id).min(1).max(100).optional(), lineKey: z.string().uuid().optional(), feeIndex: z.number().int().min(0).max(2).optional(),
         discountPaise: money, amountPaise: money, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default(''),
@@ -167,6 +189,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
     const previous = (await store.list('idempotencyRecord', { key }))[0];
     if (previous) { assert(previous.fingerprint === fingerprint, 409, 'This checkout was already saved with different details.'); res.json(previous.body); return; }
     let invoices = await createCheckoutCharges(ctx, appointment, input);
+    if (input.category) invoices = await classifiedInvoices(store, invoices);
     const used = new Set<string>();
     const plans = input.settlements.map(s => {
       let selected: any[];
@@ -179,6 +202,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
       } else selected = invoices.filter((i: any) => i.sourceKey === `${appointment.id}:fee:${s.feeIndex}`);
       assert(selected.length > 0 && (!s.invoiceIds || selected.length === s.invoiceIds.length), 404, 'Procedure not found in this appointment.');
       for (const i of selected) { assert(!used.has(i.id), 400, 'A procedure can only be collected once per checkout.'); used.add(i.id); }
+      if (input.category) assert(selected.every(i => i.billCategory === input.category), 400, 'Choose procedures from the selected bill category only.');
       const balance = selected.reduce((n, i) => n + i.totalPaise - i.paidPaise, 0);
       assert(s.discountPaise <= balance, 400, 'Procedure discount exceeds its unpaid balance.');
       assert(s.amountPaise <= balance - s.discountPaise, 400, 'Collect amount exceeds this procedure balance.');

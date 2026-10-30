@@ -4006,3 +4006,10 @@ td .text-button {
 /* Match the appointment form while displaying the saved bill. */
 .procedure-billing.appointment-create { width: 100%; }
 .procedure-billing.appointment-create > form > .reception-procedures { border: 0; padding: 0; margin: 0; }
+
+.category-bill-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px; margin: 0 0 18px; background: #f0f7f4; border-radius: 10px; }
+.category-bill-totals dt { color: #658179; font-size: 13px; margin-bottom: 6px; }
+.category-bill-totals dd { margin: 0; font-size: 22px; font-weight: 700; }
+.category-bill .category-payment-fields { margin-top: 24px; }
+.category-bill-number { overflow-wrap: anywhere; }
+@media(max-width: 540px) { .category-bill-totals { grid-template-columns: 1fr; } }

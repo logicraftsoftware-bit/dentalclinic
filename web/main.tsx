@@ -1,3 +1,5 @@
+import { billCategories, categoryLabels } from '../shared/bill-categories';
+import { CategoryPaymentDialog } from './category-payment';
 import { patientAge } from '../shared/patient-age';
 import { PatientCreditPanel, AdjustmentDialog } from './patient-credit';
 import { printPatientBill } from './print-bill';
@@ -1170,15 +1172,18 @@ function Billing({ tick, modal, action, go, notify }: any) {
   const [creatingBill, setCreatingBill] = useState(false);
   const [cancellingInvoice, setCancellingInvoice] = useState<any>(null);
   const [creditPatient, setCreditPatient] = useState('');
+  const [payingCategory, setPayingCategory] = useState<any>(null);
   const { data: billingData, error } = useData('/clinic/billing-desk', tick);
-  const billingTotals = billingData?.totals, data = billingData?.invoices, patients = billingData?.patients, payments = billingData?.payments;
+  const billingTotals = billingData?.totals, data = billingData?.bills, patients = billingData?.patients, payments = billingData?.payments;
   const [invoiceTab, setInvoiceTab] = useState('ALL');
+  const [categoryTab, setCategoryTab] = useState('ALL');
   const [showFilters, setShowFilters] = useState(false);
   const [billingSearch, setBillingSearch] = useState('');
 
   const patientById = new Map<string, any>((patients || []).map((p: any) => [p.id, p]));
   const query = billingSearch.trim().toLowerCase();
   const visible = data?.filter((i: any) => {
+    if (categoryTab !== 'ALL' && i.billCategory !== categoryTab) return false;
     const patient = patientById.get(i.patientId);
     if (invoiceTab !== 'ALL' && (invoiceTab === 'UNPAID' ? !['UNPAID', 'PENDING'].includes(i.status) : i.status !== invoiceTab)) return false;
     return !query || `${patient?.name || ''} ${patient?.phone || ''} ${patient?.id || i.patientId} ${i.billNumber || ''}`.toLowerCase().includes(query);
@@ -1219,8 +1224,9 @@ function Billing({ tick, modal, action, go, notify }: any) {
       <section className="panel billing-invoices">
         <div className="panel-heading">
           <h2><FileText size={24} />Patient Invoices</h2>
-          <div className="billing-search-tools"><label className="billing-search"><Search size={19} /><input type="search" aria-label="Search billing by name, phone or UHID" placeholder="Search patients (Name, Phone, UHID)" value={billingSearch} onChange={event => setBillingSearch(event.target.value)} /></label><button className="secondary billing-filter-toggle" aria-label="Filter invoices" aria-expanded={showFilters} onClick={() => setShowFilters(value => !value)}><Filter size={18} /></button></div>
+          <div className="billing-search-tools"><label className="billing-search"><Search size={19} /><input type="search" aria-label="Search billing by name, phone or UHID" placeholder="Search patients or bill number" value={billingSearch} onChange={event => setBillingSearch(event.target.value)} /></label><button className="secondary billing-filter-toggle" aria-label="Filter invoices" aria-expanded={showFilters} onClick={() => setShowFilters(value => !value)}><Filter size={18} /></button></div>
         </div>
+        <div className="billing-tabs" role="tablist" aria-label="Bill categories"><button role="tab" aria-selected={categoryTab === 'ALL'} onClick={() => setCategoryTab('ALL')}>All categories</button>{billCategories.map(category => <button role="tab" key={category} aria-selected={categoryTab === category} onClick={() => setCategoryTab(category)}>{categoryLabels[category]}</button>)}</div>
         <div className="billing-tabs" role="tablist" aria-label="Invoice status tabs">{[['ALL', 'All invoices'], ['PAID', 'Paid'], ['PARTIAL', 'Part paid'], ['UNPAID', 'Outstanding']].map(([value, label]) => <button role="tab" aria-selected={invoiceTab === value} key={value} onClick={() => setInvoiceTab(value)}>{label}</button>)}</div>
         {showFilters && <label className="billing-status-filter">Invoice status<select aria-label="Invoice status" value={invoiceTab} onChange={e => setInvoiceTab(e.target.value)}><option value="ALL">All invoices</option><option value="PAID">Paid</option><option value="PARTIAL">Part paid</option><option value="UNPAID">Outstanding</option><option value="CANCELLED">Cancelled</option></select></label>}
         {!data ? (
@@ -1258,10 +1264,10 @@ function Billing({ tick, modal, action, go, notify }: any) {
                     </td>
                     <td><div className="billing-row-actions">
                       {i.appointmentId && <button className="secondary small" onClick={() => go(`/clinic/reception/billing/${i.appointmentId}`)}>Open billing</button>}
-                      {!i.appointmentId && !['PAID', 'CANCELLED'].includes(i.status) && (
+                      {!['PAID', 'CANCELLED'].includes(i.status) && (
                         <button
                           className="secondary small"
-                          onClick={() => payModal(modal, action, i)}
+                          onClick={() => setPayingCategory({ ...i, invoices: (billingData?.invoices || []).filter((invoice: any) => i.invoiceIds.includes(invoice.id)) })}
                         >
                           Record payment
                         </button>
@@ -1273,15 +1279,15 @@ function Billing({ tick, modal, action, go, notify }: any) {
                             i,
                             workspaceSafe(),
                             patientById.get(i.patientId),
-                            payments?.filter((p: any) => p.invoiceId === i.id),
+                            payments?.filter((p: any) => i.invoiceIds.includes(p.invoiceId)),
                           ).catch((error: Error) => notify(error.message, 'error'))
                         }
                       >
                         <Printer size={15} />
                         Print bill
                       </button>
-                      <button className="text-button" onClick={() => setCreditPatient(i.patientId)}>Credit / refund</button>{!i.appointmentId && i.status !== 'CANCELLED' && <button className="text-button" onClick={() => setCancellingInvoice(i)}>Cancel procedure</button>}
-                      <details className="billing-more"><summary aria-label="More invoice actions"><MoreHorizontal size={18} /></summary><div><button type="button" onClick={() => navigator.clipboard.writeText(i.id).then(() => notify('Invoice number copied')).catch(() => notify('Unable to copy invoice number'))}>Copy invoice ID</button></div></details>
+                      <button className="text-button" onClick={() => setCreditPatient(i.patientId)}>Credit / refund</button>{!i.appointmentId && i.status !== 'CANCELLED' && <button className="text-button" onClick={() => setCancellingInvoice(i)}>Cancel category bill</button>}
+                      <details className="billing-more"><summary aria-label="More invoice actions"><MoreHorizontal size={18} /></summary><div><button type="button" onClick={() => navigator.clipboard.writeText(i.billNumber).then(() => notify('Bill number copied')).catch(() => notify('Unable to copy invoice number'))}>Copy bill number</button></div></details>
                     </div></td>
                   </tr>
                 ))}
@@ -1294,7 +1300,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
         <div className="panel-heading">
           <h2>Payment receipts</h2>
         </div>
-        {payments?.length ? (
+        {billingData?.categoryPayments?.length ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -1307,9 +1313,9 @@ function Billing({ tick, modal, action, go, notify }: any) {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p: any) => (
+                {billingData.categoryPayments.map((p: any) => (
                   <tr key={p.id}>
-                    <td>{p.id.slice(0, 8).toUpperCase()}</td>
+                    <td>{p.billNumber || p.id.slice(0, 8).toUpperCase()}</td>
                     <td>{day(p.createdAt)}</td>
                     <td>{p.method}</td>
                     <td>{money(p.amountPaise)}</td>
@@ -1326,8 +1332,9 @@ function Billing({ tick, modal, action, go, notify }: any) {
           />
         )}
       </section>
-    {creditPatient && <div className="modal-backdrop"><section className="modal adjustment-dialog" role="dialog" aria-modal="true" aria-label="Patient credit"><div className="panel-heading"><h2>Patient credit</h2><button className="secondary small" onClick={() => setCreditPatient('')}>Close</button></div><PatientCreditPanel patientId={creditPatient} invoices={(data || []).filter((i: any) => i.patientId === creditPatient)} tick={tick} action={action} /></section></div>}
-    {cancellingInvoice && <AdjustmentDialog type="CANCEL" patientId={cancellingInvoice.patientId} procedure={{ name: cancellingInvoice.description, paid: cancellingInvoice.paidPaise, invoiceIds: [cancellingInvoice.id] }} action={action} close={() => setCancellingInvoice(null)} onSaved={() => {}} />}
+    {creditPatient && <div className="modal-backdrop"><section className="modal adjustment-dialog" role="dialog" aria-modal="true" aria-label="Patient credit"><div className="panel-heading"><h2>Patient credit</h2><button className="secondary small" onClick={() => setCreditPatient('')}>Close</button></div><PatientCreditPanel patientId={creditPatient} invoices={(billingData?.invoices || []).filter((i: any) => i.patientId === creditPatient)} tick={tick} action={action} /></section></div>}
+    {cancellingInvoice && <AdjustmentDialog type="CANCEL" patientId={cancellingInvoice.patientId} procedure={{ name: cancellingInvoice.description, paid: cancellingInvoice.paidPaise, invoiceIds: cancellingInvoice.invoiceIds }} action={action} close={() => setCancellingInvoice(null)} onSaved={() => {}} />}
+    {payingCategory && <CategoryPaymentDialog bill={payingCategory} action={action} close={() => setPayingCategory(null)} />}
     {creatingBill && <FeeBillDialog action={action} close={() => setCreatingBill(false)} />}
     </div>
   );

@@ -1,3 +1,4 @@
+import { departmentCategory } from '../shared/bill-categories.js';
 import { z } from 'zod';
 import { assert, id, money, hash } from './core.js';
 import { doctorAvailableAt } from './doctor-branches.js';
@@ -31,7 +32,7 @@ export async function saveFeeBill(ctx: any, patientId: string, input: z.infer<ty
     assert(group.active && chargeDepartment(group) === line.department, 400, 'Procedure does not belong to the selected department.');
     const doctor = await store.get('doctor', line.doctorId);
     assert(doctor.active && (!branchId || doctorAvailableAt(doctor, branchId)), 400, 'Choose an active treating doctor available at this branch.');
-    lines.push({ charge, doctor });
+    lines.push({ charge, doctor, department: line.department });
   }
   const total = (appointment ? appointment.clinicFeePaise + appointment.consultationPaise + appointment.visitingConsultationPaise : input.clinicFee ? 30000 : 0)
     + lines.reduce((sum, { charge }) => sum + charge.pricePaise + (charge.labChargePaise || 0), 0);
@@ -45,12 +46,12 @@ export async function saveFeeBill(ctx: any, patientId: string, input: z.infer<ty
     await ensureVisitFees(store, appointment);
     invoices.push(...await store.list('invoice', { appointmentId: appointment.id }));
   } else if (input.clinicFee) {
-    invoices.push(await store.create('invoice', { ...base, sourceKey: `${input.checkoutKey}:clinic`, description: 'Clinic fee', chargeKind: 'VISIT', totalPaise: 30000 }));
+    invoices.push(await store.create('invoice', { ...base, sourceKey: `${input.checkoutKey}:clinic`, description: 'Clinic fee', billCategory: 'CLINIC', chargeKind: 'VISIT', totalPaise: 30000 }));
   }
-  for (const [index, { charge, doctor }] of lines.entries()) {
+  for (const [index, { charge, doctor, department }] of lines.entries()) {
     for (const [kind, value] of [['PROCEDURE', charge.pricePaise], ['LAB', charge.labChargePaise || 0]] as const) {
       if (!value) continue;
-      invoices.push(await store.create('invoice', { ...base, sourceKey: `${input.checkoutKey}:${index}:${kind}`, doctorId: doctor.id, chargeKind: kind, description: kind === 'LAB' ? `Lab: ${charge.name}` : charge.name, totalPaise: value }));
+      invoices.push(await store.create('invoice', { ...base, sourceKey: `${input.checkoutKey}:${index}:${kind}`, billCategory: departmentCategory(department), department, catalogItemId: charge.id, doctorId: doctor.id, chargeKind: kind, description: kind === 'LAB' ? `Lab: ${charge.name}` : charge.name, totalPaise: value }));
     }
   }
   const paidInvoices = await recordCheckoutPayment(ctx, invoices, { amountPaise: amount, method: input.payment.method, reference: '' }, input.checkoutKey, actor);

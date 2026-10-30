@@ -1,9 +1,10 @@
+import { categoryMetadata } from '../shared/bill-categories';
 import { procedureKey } from '../shared/procedure-key';
 export function billingLines(invoices: any[], payments: any[]) {
   const groups = new Map<string, any>();
   for (const i of invoices) {
     const key = procedureKey(i);
-    if (!groups.has(key)) groups.set(key, { key, invoices: [], name: i.description.replace(/^Lab: /, ''), doctorId: i.doctorId });
+    if (!groups.has(key)) groups.set(key, { key, billCategory: categoryMetadata(i).billCategory, invoices: [], name: i.description.replace(/^Lab: /, ''), doctorId: i.doctorId });
     const group = groups.get(key); group.invoices.push(i);
     if (i.chargeKind !== 'LAB' && !i.description.startsWith('Lab:')) { group.name = i.description; group.doctorId = i.doctorId; }
   }

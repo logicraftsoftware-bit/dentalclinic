@@ -11,7 +11,7 @@ export async function ensureVisitFees(store: any, appointment: any) {
       await store.create('invoice', {
         patientId: appointment.patientId, appointmentId: appointment.id,
         sourceKey: `${appointment.id}:fee:${index}`, description: String(description),
-        chargeKind: 'VISIT', totalPaise: Number(amount),
+        chargeKind: 'VISIT', billCategory: 'CLINIC', totalPaise: Number(amount),
       });
     }
   }

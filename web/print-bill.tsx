@@ -1,3 +1,4 @@
+import { categoryReceipt } from '../shared/bill-categories';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BillReceipt } from './bill-receipt';
@@ -9,7 +10,7 @@ export async function printPatientBill(invoice: any, workspace: any, patient: an
   popup.document.title = 'Patient bill';
   popup.document.body.textContent = 'Preparing bill...';
   try {
-    const data = receiptData || (invoice.appointmentId ? await api(`/clinic/reception/${invoice.appointmentId}`) : {
+    let data = receiptData || (invoice.appointmentId ? await api(`/clinic/reception/${invoice.appointmentId}`) : {
       patient: patient || { id: invoice.patientId, name: 'Patient' },
       appointment: { id: invoice.id, createdAt: invoice.createdAt, startsAt: invoice.createdAt },
       billNumber: invoice.billNumber, invoices: [invoice], payments, doctors: [],
@@ -18,8 +19,11 @@ export async function printPatientBill(invoice: any, workspace: any, patient: an
       const credit = await api(`/clinic/patient-credits/${invoice.patientId}`);
       data.patient = credit.patient; data.branch = credit.branch;
       data.adjustments = credit.entries; data.creditBalancePaise = credit.balancePaise;
-      data.payments = credit.payments.filter((p: any) => p.invoiceId === invoice.id);
+      const ids = new Set(invoice.invoiceIds || [invoice.id]);
+      data.invoices = credit.invoices.filter((i: any) => ids.has(i.id));
+      data.payments = credit.payments.filter((p: any) => ids.has(p.invoiceId));
     }
+    if (!receiptData && invoice.billCategory && invoice.invoiceIds) data = categoryReceipt(data, invoice.billCategory, invoice.billNumber, invoice.invoiceIds);
     const zone = workspace?.tenant?.settings?.timezone || 'Asia/Kolkata';
     const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')];
     const loaded = styles.map(source => new Promise<void>(resolve => {

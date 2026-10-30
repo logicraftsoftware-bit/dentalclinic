@@ -1,3 +1,4 @@
+import { categoryMetadata } from '../shared/bill-categories.js';
 import { workspaceData } from './workspace.js';
 import { parsePartial } from './validation.js';
 import { recordInvoicePayment } from './patient-payments.js';
@@ -733,14 +734,18 @@ clinicApi.post(
     );
     const row = await store.create('treatmentSession', data);
     await store.update('treatmentItem', item.id, { status: last ? 'COMPLETED' : 'IN_PROGRESS' });
-    if (data.feePaise > 0)
+    if (data.feePaise > 0) {
+      const charges = item.catalogItemId ? [await store.get('catalogItem', item.catalogItemId)] : [];
+      const groups = charges[0]?.chargeGroupId ? [await store.get('chargeGroup', charges[0].chargeGroupId)] : [];
       await store.create('invoice', {
+        ...categoryMetadata({ description: item.name, catalogItemId: item.catalogItemId }, charges, groups), doctorId: data.doctorId, chargeKind: 'PROCEDURE',
         patientId: plan.patientId,
         sessionId: row.id,
         sourceKey: row.id,
         description: `${item.name} · Tooth ${item.tooth} · Session ${sessions.length + 1}`,
         totalPaise: data.feePaise,
       });
+    }
     await store.audit(actor.userId, 'session.created', row.id);
     res.status(201).json(row);
   }),
