@@ -1,4 +1,4 @@
-import { chargeDepartment, chargeDepartments } from './charge-groups';
+import { chargeDepartment, chargeDepartments } from './charge-groups.js';
 
 export const billCategories = ['CLINIC', 'GENERAL', 'SPECIALITY'] as const;
 export type BillCategory = typeof billCategories[number];

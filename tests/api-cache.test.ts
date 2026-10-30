@@ -37,5 +37,9 @@ test('API reads share requests, reuse results, and invalidate across mutations a
     await api('/auth/logout', 'POST', {});
     await api('/clinic/workspace');
     assert.equal(calls, 9);
+    globalThis.fetch = (async () => new Response('A server error has occurred', { status: 500, headers: { 'Content-Type': 'text/plain' } })) as typeof fetch;
+    await assert.rejects(api('/auth/login', 'POST', {}), /server is temporarily unavailable/);
+    globalThis.fetch = (async () => new Response('{"incomplete":', { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+    await assert.rejects(api('/auth/me'), /incomplete data/);
   } finally { globalThis.fetch = originalFetch; clearApiReads(); }
 });

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"tsx watch server/index.ts\" \"vite --host 127.0.0.1\"",
-    "build": "prisma generate && tsc --noEmit && node scripts/build.mjs && esbuild server/index.ts server/jobs-runner.ts --bundle --platform=node --packages=external --format=esm --outdir=dist-server",
+    "build": "prisma generate && tsc --noEmit && tsc --project tsconfig.server.json --noEmit && node scripts/build.mjs && esbuild server/index.ts server/jobs-runner.ts --bundle --platform=node --packages=external --format=esm --outdir=dist-server",
     "start": "node dist-server/index.js",
     "db:generate": "node --import dotenv/config node_modules/prisma/build/index.js generate",
     "db:seed": "tsx prisma/seed.ts",

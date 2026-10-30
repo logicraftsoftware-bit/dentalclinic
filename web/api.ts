@@ -52,7 +52,14 @@ async function request<T = any>(url: string, method = 'GET', body?: unknown): Pr
     },
     body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
   });
-  const data = await response.json();
+  if (!response.headers.get('content-type')?.includes('application/json')) {
+    throw new Error(response.status >= 500
+      ? 'The server is temporarily unavailable. Please try again shortly.'
+      : 'The server returned an unexpected response. Please refresh and try again.');
+  }
+  let data: any;
+  try { data = await response.json(); }
+  catch { throw new Error('The server returned incomplete data. Please try again.'); }
   pending.delete(fingerprint);
   if (!response.ok) throw new Error(data.error || 'Request failed.');
   return data;

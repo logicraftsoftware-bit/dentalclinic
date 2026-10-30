@@ -19,7 +19,7 @@ try {
   const setup = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
   try { for (const collection of ['Speciality', 'ChargeGroup', 'DentalEncounter', 'InternalReferral', 'PatientAdjustment']) await setup.$runCommandRaw({ drop: collection }); }
   finally { await setup.$disconnect(); }
-  await run('node_modules/tsx/dist/cli.mjs', ['--test', 'tests/security.test.ts', 'tests/time.test.ts', 'tests/routes.test.ts', 'tests/api-cache.test.ts', 'tests/calendar.test.ts', 'tests/accounts.test.ts', 'tests/bill-settlement.test.ts', 'tests/validation.test.ts']);
+  await run('node_modules/tsx/dist/cli.mjs', ['--test', 'tests/security.test.ts', 'tests/time.test.ts', 'tests/routes.test.ts', 'tests/api-cache.test.ts', 'tests/runtime-imports.test.ts', 'tests/calendar.test.ts', 'tests/accounts.test.ts', 'tests/bill-settlement.test.ts', 'tests/validation.test.ts']);
   await run('node_modules/tsx/dist/cli.mjs', ['--test', 'tests/integration.ts']);
   if (process.argv.includes('--browser')) await run('node_modules/@playwright/test/cli.js', ['test']);
 } finally { await mongo.stop(); }
