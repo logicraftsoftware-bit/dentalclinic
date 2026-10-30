@@ -201,8 +201,8 @@ test('receptionist sees today, marks attendance and bills procedures for multipl
   await page.getByLabel('Payment method 3', { exact: true }).selectOption('CARD');
   await page.screenshot({ path: '.tools/screenshots/reception-billing-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Collect payment', exact: true }).click();
-  const restoration = page.locator('tr[data-procedure="Restoration"]');
-  const scaling = page.locator('tr[data-procedure="Scaling"]');
+  const restoration = page.locator('[data-procedure="Restoration"]');
+  const scaling = page.locator('[data-procedure="Scaling"]');
   await expect(restoration).toContainText('Saved discount: ₹100');
   await expect(scaling).toContainText('Saved discount: ₹50');
   const billSummary = page.getByLabel('Bill summary');
