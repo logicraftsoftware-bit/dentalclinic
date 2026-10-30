@@ -193,6 +193,7 @@ test('receptionist manages clinic general and speciality invoices with separate 
   const generalBill = page.getByRole('region', { name: 'General dentistry billing', exact: true });
   const specialBill = page.getByRole('region', { name: 'Speciality treatment billing', exact: true });
   const pending = (region: any) => region.getByText('Pending balance', { exact: true }).locator('..').locator('dd');
+  await clinicBill.getByLabel('Payment status', { exact: true }).selectOption('PAID');
   await expect(clinicBill.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('300');
   await clinicBill.getByRole('button', { name: 'Collect category payment', exact: true }).click();
   await expect(pending(clinicBill)).toHaveText('₹0');
@@ -214,7 +215,7 @@ test('receptionist manages clinic general and speciality invoices with separate 
   await generalBill.getByRole('button', { name: 'Save category bill', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'General Dentistry Bill', exact: true })).not.toBeChecked();
   await expect(pending(generalBill)).toHaveText('₹1,100');
-  await expect(specialBill.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('1450');
+  await expect(specialBill.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('');
   await specialBill.getByLabel('Payment status', { exact: true }).selectOption('PARTIAL');
   await specialBill.getByLabel('Paid amount (₹)', { exact: true }).fill('500');
   await specialBill.getByLabel('Payment mode', { exact: true }).selectOption('UPI');
@@ -227,7 +228,7 @@ test('receptionist manages clinic general and speciality invoices with separate 
   await expect(specialBill.locator('[data-procedure="Biopsy"]')).toContainText('Pending: ₹950');
   await expect(page.locator('.procedure-history')).toContainText('SPECIAL-UPI');
   await page.reload();
-  await expect(specialBill.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('950');
+  await expect(specialBill.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('');
   await expect(specialBill).toContainText(parentNumber + '-S');
   await expect(generalBill).toContainText(parentNumber + '-G');
   const popupPromise = page.waitForEvent('popup');
@@ -254,6 +255,7 @@ test('receptionist manages clinic general and speciality invoices with separate 
   await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Record payment', exact: true }).click();
   let paymentDialog = page.getByRole('dialog', { name: 'Category payment', exact: true });
+  await paymentDialog.getByLabel('Payment status', { exact: true }).selectOption('PAID');
   await expect(paymentDialog.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('950');
   await paymentDialog.getByLabel('Payment mode', { exact: true }).selectOption('BANK');
   await paymentDialog.getByRole('button', { name: 'Collect category payment', exact: true }).click();
@@ -272,6 +274,7 @@ test('receptionist manages clinic general and speciality invoices with separate 
   await expect(pending(generalBill)).toHaveText('₹900');
   await expect(pending(specialBill)).toHaveText('₹0');
   await generalBill.getByLabel('Bill discount', { exact: true }).fill('100');
+  await generalBill.getByLabel('Payment status', { exact: true }).selectOption('PAID');
   await expect(generalBill.getByLabel('Paid amount (₹)', { exact: true })).toHaveValue('800');
   await generalBill.getByRole('button', { name: 'Collect category payment', exact: true }).click();
   await expect(pending(generalBill)).toHaveText('₹0');

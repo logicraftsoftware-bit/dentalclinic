@@ -4,7 +4,7 @@ import { categoryLabels, type BillCategory } from '../shared/bill-categories';
 import { billingLines } from './billing-lines';
 
 export type CategoryPayment = { status: string; amount: string; method: string; reference: string; discount: string };
-export const initialCategoryPayment = (): CategoryPayment => ({ status: 'PAID', amount: '', method: 'CASH', reference: '', discount: '' });
+export const initialCategoryPayment = (): CategoryPayment => ({ status: 'PARTIAL', amount: '', method: 'CASH', reference: '', discount: '' });
 const paise = (value: string) => Math.round(Number(value || 0) * 100);
 export function categoryPaymentPlan(balance: number, value: CategoryPayment) {
   const discount = paise(value.discount), due = balance - discount;

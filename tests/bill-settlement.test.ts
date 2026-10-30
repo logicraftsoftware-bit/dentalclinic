@@ -4,6 +4,19 @@ import { billSettlements } from '../web/bill-settlement';
 import { invoiceBillNumbers, formatBillNumber } from '../shared/bill-number';
 import { categoryMetadata, categoryBills, categoryCollections, categoryReceipt } from '../shared/bill-categories';
 import { billingLines } from '../web/billing-lines';
+import { categoryPaymentPlan, initialCategoryPayment } from '../web/category-payment';
+
+test('category collection requires an explicit amount and leaves the rest pending', () => {
+  const value = initialCategoryPayment();
+  assert.equal(value.amount, '');
+  assert.equal(categoryPaymentPlan(320000, value).collect, 0);
+  assert.equal(categoryPaymentPlan(320000, value).invalid, true);
+  const partial = categoryPaymentPlan(320000, { ...value, amount: '800' });
+  assert.equal(partial.invalid, false);
+  assert.equal(partial.collect, 80000);
+  assert.equal(partial.due - partial.collect, 240000);
+  assert.equal(categoryPaymentPlan(320000, { ...value, status: 'PAID' }).collect, 320000);
+});
 
 const rows = [
   { kind: 'saved', net: 30000, paid: 30000, target: { invoiceIds: ['paid'] } },
