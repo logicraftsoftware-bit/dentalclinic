@@ -207,6 +207,9 @@ test('receptionist adds general and speciality treatments and collects whole bil
   await page.getByLabel('Payment reference', { exact: true }).fill('RESTORATION-UPI');
   await page.screenshot({ path: '.tools/screenshots/reception-billing-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Collect payment', exact: true }).click();
+  await expect(page.getByLabel('Bill number', { exact: true })).toContainText(/INV-\d{8}-[A-F0-9]{8}/);
+  const billNumber = (await page.getByLabel('Bill number', { exact: true }).innerText()).replace('Bill No: ', '').trim();
+  expect(billNumber).toMatch(/^INV-\d{8}-[A-F0-9]{8}$/);
   const restoration = page.locator('[data-procedure="Restoration"]');
   const scaling = page.locator('[data-procedure="Scaling"]');
   await expect(restoration).toContainText('Previously paid: ₹600');
@@ -223,13 +226,14 @@ test('receptionist adds general and speciality treatments and collects whole bil
   await expect(remainingBalance).toHaveText('₹0');
   await page.reload();
   await expect(restoration).toContainText('Paid by BANK, UPI');
+  await expect(page.getByLabel('Bill number', { exact: true })).toContainText(billNumber);
   const saved = await (await page.request.get(`/api/clinic/reception/${appointment.id}`)).json();
   expect(saved.invoices.find((i: any) => i.description === 'Scaling').doctorId).toBe(second.id);
   await page.goto('/clinic/billing');
   const search = page.getByRole('searchbox', { name: 'Search billing by name, phone or UHID' });
   await search.fill('no-such-patient');
   await expect(page.getByText('No invoices match your search.')).toBeVisible();
-  for (const value of [patient.name, patient.phone, patient.id.slice(0, 8).toUpperCase()]) {
+  for (const value of [patient.name, patient.phone, patient.id.slice(0, 8).toUpperCase(), billNumber]) {
     await search.fill(value);
     await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(4);
   }
@@ -248,6 +252,7 @@ test('receptionist adds general and speciality treatments and collects whole bil
   await page.getByRole('button', { name: 'Print bill', exact: true }).first().click();
   const receiptPopup = await popupPromise;
   await expect(receiptPopup.locator('.receipt-brand h1')).toHaveText('Reception branch');
+  await expect(receiptPopup.locator('.receipt-invoice-meta')).toContainText(billNumber);
   await expect(receiptPopup.locator('.receipt-branch-address')).toHaveText('GS Road, Guwahati\nDental care and orthodontics\nOpen Monday to Saturday');
   await expect(receiptPopup.locator('.receipt-branch-address')).toHaveCSS('white-space', 'pre-wrap');
   await expect(receiptPopup.locator('.receipt-procedure-table')).toContainText('Restoration');

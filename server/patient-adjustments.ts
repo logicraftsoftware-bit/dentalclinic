@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assert, hash, id, money } from './core.js';
 import { procedureKey } from '../shared/procedure-key.js';
 import { recordCheckoutPayment } from './patient-payments.js';
+import { invoiceBillNumbers } from '../shared/bill-number.js';
 
 export const creditBalance = (entries: any[]) => entries.reduce((n, entry) => n + entry.amountPaise, 0);
 export function totalsFromRecords(invoices: any[], payments: any[], adjustments: any[]) {
@@ -72,14 +73,14 @@ async function spendCredit(ctx: any, patientId: string, targets: any[], common: 
   return creditBalance(ledger) - total;
 }
 export function registerPatientAdjustmentRoutes(router: Router, run: any) {
-  router.get('/billing-desk', run('billing', async (_req: any, res: any, { store }: any) => {
+  router.get('/billing-desk', run('billing', async (_req: any, res: any, { store, tenant }: any) => {
     // One consistent snapshot and one authorization pass for the billing page.
     const [invoices, payments, adjustments] = await Promise.all([
       store.list('invoice', {}, { orderBy: { createdAt: 'desc' } }),
       store.list('payment', {}, { orderBy: { createdAt: 'desc' } }),
       store.list('patientAdjustment'),
     ]);
-    const visibleInvoices = invoices.slice(0, 500);
+    const visibleInvoices = invoiceBillNumbers(invoices, tenant.settings?.timezone || 'Asia/Kolkata').slice(0, 500);
     const patientIds = [...new Set(visibleInvoices.map((i: any) => i.patientId))];
     const patients = patientIds.length ? await store.list('patient', { id: { in: patientIds } }, {
       select: { id: true, name: true, phone: true, branchId: true, age: true, ageRecordedAt: true, dob: true, gender: true, address: true },

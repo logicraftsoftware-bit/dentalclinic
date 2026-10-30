@@ -1,3 +1,4 @@
+import { formatBillNumber } from '../shared/bill-number';
 import React, { useEffect, useState } from 'react';
 import { api, money } from './api';
 import { CheckCircle2, Printer } from 'lucide-react';
@@ -102,7 +103,7 @@ export function AppointmentCreate({ go, action, workspace }: any) {
     return <section className="panel appointment-create appointment-thank-you">
       <div className="appointment-confirmation-heading"><CheckCircle2 size={52} aria-hidden="true" /><h1>Thank you!</h1><p>Your appointment has been created successfully.</p></div>
       {error && <p role="alert" className="appointment-error">{error}</p>}
-      <dl className="appointment-confirmation-details"><dt>Patient</dt><dd>{bookedPatient.name}</dd><dt>Phone</dt><dd>{bookedPatient.phone || '—'}</dd><dt>Appointment</dt><dd>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'long', timeStyle: 'short' }).format(new Date(appointment.startsAt))}</dd><dt>Doctor</dt><dd>{bookedDoctor?.name || 'Unassigned'}</dd><dt>Branch</dt><dd>{branch?.name || 'Unassigned'}</dd></dl>
+      <dl className="appointment-confirmation-details">{appointment.bill && <><dt>Bill No</dt><dd>{formatBillNumber(appointment.id, appointment.bill.invoices[0]?.createdAt || appointment.createdAt, zone)}</dd></>}<dt>Patient</dt><dd>{bookedPatient.name}</dd><dt>Phone</dt><dd>{bookedPatient.phone || '—'}</dd><dt>Appointment</dt><dd>{new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'long', timeStyle: 'short' }).format(new Date(appointment.startsAt))}</dd><dt>Doctor</dt><dd>{bookedDoctor?.name || 'Unassigned'}</dd><dt>Branch</dt><dd>{branch?.name || 'Unassigned'}</dd></dl>
       <fieldset><legend>Appointment fees</legend>{fees.map(([label, value], index) => <p className="appointment-confirmation-fee" key={index}><span>{label}</span><strong>{money(Number(value))}</strong></p>)}{!fees.length && <p>No appointment fees selected.</p>}<p className="appointment-confirmation-fee"><strong>Total payable</strong><strong>{money(total)}</strong></p>{appointment.bill && <><p>Payment status: {appointment.paymentStatus === 'PAID' ? 'Paid' : appointment.paymentStatus === 'PARTIAL' ? 'Part paid' : 'Unpaid'}</p><p>Paid: {money(appointment.bill.paidPaise)} · Balance: {money(appointment.bill.balancePaise)}</p></>}</fieldset>
       <div className="appointment-actions"><button type="button" className="secondary" onClick={() => go('/clinic/appointments')}>Back to appointments</button><button type="button" className="primary" disabled={printing} onClick={print}><Printer size={18} />{printing ? 'Preparing bill...' : 'Print bill'}</button></div>
     </section>;

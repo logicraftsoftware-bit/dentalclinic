@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { billSettlements } from '../web/bill-settlement';
+import { invoiceBillNumbers, formatBillNumber } from '../shared/bill-number';
 
 const rows = [
   { kind: 'saved', net: 30000, paid: 30000, target: { invoiceIds: ['paid'] } },
@@ -27,4 +28,15 @@ test('unpaid new treatments are saved without creating a collection', () => {
   assert.equal(plans.length, 1);
   assert.equal(plans[0].lineKey, 'new');
   assert.equal(plans[0].amountPaise, 0);
+});
+
+test('bill numbers match printed bills and stay the same when later charges are added', () => {
+  const first = { id: '11111111-abcd', appointmentId: 'abcdef12-visit', createdAt: '2026-10-29T20:00:00Z' };
+  const later = { id: '22222222-abcd', appointmentId: first.appointmentId, createdAt: '2026-11-02T10:00:00Z' };
+  const cancelled = { ...first, status: 'CANCELLED' };
+  const numbered = invoiceBillNumbers([later, cancelled], 'Asia/Kolkata');
+  assert.equal(numbered[0].billNumber, 'INV-20261030-ABCDEF12');
+  assert.equal(numbered[1].billNumber, numbered[0].billNumber);
+  assert.equal(formatBillNumber(first.appointmentId, first.createdAt), numbered[0].billNumber);
+  assert.equal(invoiceBillNumbers([{ ...first, appointmentId: null }], 'Asia/Kolkata')[0].billNumber, 'INV-20261030-11111111');
 });

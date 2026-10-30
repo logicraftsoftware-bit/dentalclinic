@@ -12,7 +12,7 @@ export async function printPatientBill(invoice: any, workspace: any, patient: an
     const data = receiptData || (invoice.appointmentId ? await api(`/clinic/reception/${invoice.appointmentId}`) : {
       patient: patient || { id: invoice.patientId, name: 'Patient' },
       appointment: { id: invoice.id, createdAt: invoice.createdAt, startsAt: invoice.createdAt },
-      invoices: [invoice], payments, doctors: [],
+      billNumber: invoice.billNumber, invoices: [invoice], payments, doctors: [],
     });
     if (!receiptData && !invoice.appointmentId) {
       const credit = await api(`/clinic/patient-credits/${invoice.patientId}`);

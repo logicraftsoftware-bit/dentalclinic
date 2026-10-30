@@ -1181,7 +1181,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
   const visible = data?.filter((i: any) => {
     const patient = patientById.get(i.patientId);
     if (invoiceTab !== 'ALL' && (invoiceTab === 'UNPAID' ? !['UNPAID', 'PENDING'].includes(i.status) : i.status !== invoiceTab)) return false;
-    return !query || `${patient?.name || ''} ${patient?.phone || ''} ${patient?.id || i.patientId}`.toLowerCase().includes(query);
+    return !query || `${patient?.name || ''} ${patient?.phone || ''} ${patient?.id || i.patientId} ${i.billNumber || ''}`.toLowerCase().includes(query);
   });
   return (
     <div className="billing-page"><Tooth className="billing-watermark" aria-hidden="true" strokeWidth={1.2} />
@@ -1248,7 +1248,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
                       <strong>
                         {patientById.get(i.patientId)?.name || 'Patient'}
                       </strong>
-                      <small>{patientById.get(i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>{i.description}</small></div></div>
+                      <small>{patientById.get(i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>Bill No: <span>{i.billNumber}</span></small><small>{i.description}</small></div></div>
                     </td>
                     <td>{money(i.totalPaise)}</td>
                     <td>{money(i.paidPaise)}</td>

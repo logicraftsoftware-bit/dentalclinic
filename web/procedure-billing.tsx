@@ -64,6 +64,7 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
   }
   return <section className="panel reception-billing procedure-billing appointment-create" aria-label={`Billing desk for ${data.patient.name}`}>
     <header className="reception-bill-header"><div><h2>{data.patient.name}</h2><p>{data.patient.phone} · {new Intl.DateTimeFormat('en-IN', { timeZone: zone, dateStyle: 'medium' }).format(new Date(appointment.startsAt))}</p></div><div className="procedure-toolbar"><button className="secondary small" disabled={!data.invoices.length} onClick={() => window.print()}>Print saved bill</button><button className="secondary icon-button" disabled={busy} aria-label="Close billing desk" onClick={close}><X size={17} /></button></div></header>
+    <p aria-label="Bill number"><strong>Bill No: </strong>{data.invoices.length ? data.billNumber : 'Available after saving the bill'}</p>
     {error && <p className="error-banner" role="alert">{error}</p>}
     <form onSubmit={save}><fieldset className="reception-procedures" disabled={busy || blocked}>
       <div className="procedure-totals" aria-label="Bill summary">

@@ -6,6 +6,7 @@ import { doctorAvailableAt } from './doctor-branches.js';
 import { creditBalance } from './patient-adjustments.js';
 import { feeBillSchema, saveFeeBill } from './fee-bills.js';
 import { ensureVisitFees } from './visit-fees.js';
+import { formatBillNumber } from '../shared/bill-number.js';
 export { ensureVisitFees } from './visit-fees.js';
 
 const billSchema = z.object({
@@ -88,7 +89,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
     const adjustments = await store.list('patientAdjustment', { patientId: patient.id }, { orderBy: { createdAt: 'desc' } });
     const branchId = patient.branchId || appointment.branchId;
     const branch = branchId ? await tx.branch.findFirst({ where: { id: branchId, tenantId: tenant.id }, select: { id: true, name: true, address: true } }) : null;
-    res.json({ appointment, patient, branch, invoices, payments, adjustments, creditBalancePaise: creditBalance(adjustments),
+    res.json({ billNumber: formatBillNumber(appointment.id, invoices[0]?.createdAt || appointment.createdAt, tenant.settings?.timezone || 'Asia/Kolkata'), appointment, patient, branch, invoices, payments, adjustments, creditBalancePaise: creditBalance(adjustments),
       doctors: doctors.filter((d: any) => !appointment.branchId || doctorAvailableAt(d, appointment.branchId))
         .map((d: any) => ({ id: d.id, name: d.name, specialty: d.specialty })), charges });
   }));

@@ -1,4 +1,5 @@
 import { patientAge } from '../shared/patient-age';
+import { formatBillNumber } from '../shared/bill-number';
 import { billingLines, procedureCollections } from './billing-lines';
 import React from 'react';
 import { FileText, Mail } from 'lucide-react';
@@ -23,7 +24,7 @@ export function BillReceipt({ data, workspace, zone }: any) {
     timeZone: zone, day: '2-digit', month: 'short', year: 'numeric',
     ...(withTime ? { hour: '2-digit', minute: '2-digit', hour12: true } : {}),
   }).format(new Date(value));
-  const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(billDate)).replaceAll('-', '');
+  const billNumber = data.billNumber || formatBillNumber(appointment.id, billDate, zone);
   const visitDate = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(appointment.startsAt));
   const years = patientAge(patient, visitDate);
   const age = years === null ? '—' : `${years} years`;
@@ -41,7 +42,7 @@ export function BillReceipt({ data, workspace, zone }: any) {
     </header>
     <div className="receipt-title-row">
       <div><h2>PATIENT BILL / PAYMENT RECEIPT</h2><p>{settings.invoiceHeader || 'Thank you for trusting us with your smile.'}</p></div>
-      <dl className="receipt-invoice-meta"><dt>Invoice No</dt><dd>INV-{dateKey}-{appointment.id.slice(0, 8).toUpperCase()}</dd><dt>Bill Date</dt><dd>{date(billDate, true)}</dd><dt>Visit Date</dt><dd>{date(appointment.startsAt)}</dd></dl>
+      <dl className="receipt-invoice-meta"><dt>Bill No</dt><dd>{billNumber}</dd><dt>Bill Date</dt><dd>{date(billDate, true)}</dd><dt>Visit Date</dt><dd>{date(appointment.startsAt)}</dd></dl>
     </div>
     <div className="receipt-patient-info">
       <dl><dt>Patient Name</dt><dd><strong>{patient.name}</strong></dd><dt>Patient ID</dt><dd>{patient.id.slice(0, 8).toUpperCase()}</dd><dt>Phone No</dt><dd>{patient.phone || '—'}</dd><dt>Age / Gender</dt><dd>{age} / {patient.gender === 'Unspecified' ? '—' : patient.gender || '—'}</dd></dl>
