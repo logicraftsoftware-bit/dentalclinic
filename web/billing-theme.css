@@ -1,5 +1,13 @@
 /* Shared workspace navigation and the billing reference design. Print rules stay in style.css. */
 @media screen {
+  .app-shell .content:has(.reception-full-page), .app-shell .content:has(.billing-page) { max-width: none; padding-left: 16px; padding-right: 16px; }
+  .reception-full-page .reception-billing.appointment-create { width: 100%; max-width: none; margin: 0; }
+  .billing-visit-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .billing-invoices .billing-visit-heading td { background: #f0f7f6; border-top: 1px solid #dce8e5; }
+  .billing-invoices .billing-category-name { padding-left: 32px; }
+  .billing-invoices .billing-row-actions { flex-wrap: wrap; }
+}
+@media screen {
   .app-shell { background: linear-gradient(125deg, #005b52, #003d36 35%, #b9e5df); color: #111c30; }
   .app-shell .sidebar { width: 268px; padding: 72px 18px 18px; border: 0; background: linear-gradient(155deg, #005b52, #003f37 68%, #00584e); color: #e9fffa; }
   .app-shell .sidebar > .brand { padding-left: 19px; margin-bottom: 48px; gap: 0; color: white; font-size: 28px; font-weight: 800; letter-spacing: -.8px; }

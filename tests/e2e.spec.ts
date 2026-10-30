@@ -249,7 +249,9 @@ test('receptionist manages clinic general and speciality invoices with separate 
   const search = page.getByRole('searchbox', { name: 'Search billing by name, phone or UHID' });
   for (const value of [patient.name, patient.phone, parentNumber]) {
     await search.fill(value);
-    await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(3);
+    await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(1);
+    await expect(page.locator('.billing-visit-heading')).toHaveCount(1);
+    await expect(page.locator('.billing-visit-heading')).toContainText(parentNumber);
   }
   await search.fill(parentNumber + '-S');
   await expect(page.getByRole('button', { name: 'Open billing', exact: true })).toHaveCount(1);

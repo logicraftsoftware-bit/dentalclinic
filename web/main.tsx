@@ -1,4 +1,4 @@
-import { billCategories, categoryLabels } from '../shared/bill-categories';
+import { billCategories, categoryLabels, invoiceBillGroupKey } from '../shared/bill-categories';
 import { CategoryPaymentDialog } from './category-payment';
 import { patientAge } from '../shared/patient-age';
 import { PatientCreditPanel, AdjustmentDialog } from './patient-credit';
@@ -1188,6 +1188,12 @@ function Billing({ tick, modal, action, go, notify }: any) {
     if (invoiceTab !== 'ALL' && (invoiceTab === 'UNPAID' ? !['UNPAID', 'PENDING'].includes(i.status) : i.status !== invoiceTab)) return false;
     return !query || `${patient?.name || ''} ${patient?.phone || ''} ${patient?.id || i.patientId} ${i.billNumber || ''}`.toLowerCase().includes(query);
   });
+  const visitBills = new Map<string, any[]>();
+  for (const bill of visible || []) {
+    const key = invoiceBillGroupKey(bill);
+    if (!visitBills.has(key)) visitBills.set(key, []);
+    visitBills.get(key)!.push(bill);
+  }
   return (
     <div className="billing-page"><Tooth className="billing-watermark" aria-hidden="true" strokeWidth={1.2} />
       <PageTitle
@@ -1248,14 +1254,11 @@ function Billing({ tick, modal, action, go, notify }: any) {
               </thead>
               <tbody>
                 {!visible.length && <tr><td colSpan={6}>No invoices match your search.</td></tr>}
-                {visible.map((i: any) => (
+                {[...visitBills].map(([visitKey, categories]) => <React.Fragment key={visitKey}>
+                  <tr className="billing-visit-heading"><td colSpan={6}><div className="billing-visit-summary"><div className="billing-patient"><span className="billing-patient-avatar">{initials(patientById.get(categories[0].patientId)?.name || 'Patient').slice(0, 1)}</span><div><strong>{patientById.get(categories[0].patientId)?.name || 'Patient'}</strong><small>{patientById.get(categories[0].patientId)?.phone} · UHID: {categories[0].patientId.slice(0, 8).toUpperCase()}</small><small>Bill No: <span>{categories[0].billNumber.replace(/-[CGS]$/, '')}</span></small></div></div>{categories[0].appointmentId && <button className="secondary small" onClick={() => go(`/clinic/reception/billing/${categories[0].appointmentId}`)}>Open billing</button>}</div></td></tr>
+                  {categories.map((i: any) => (
                   <tr key={i.id}>
-                    <td><div className="billing-patient"><span className="billing-patient-avatar">{initials(patientById.get(i.patientId)?.name || 'Patient').slice(0, 1)}</span><div>
-                      <strong>
-                        {patientById.get(i.patientId)?.name || 'Patient'}
-                      </strong>
-                      <small>{patientById.get(i.patientId)?.phone} · UHID: {i.patientId.slice(0, 8).toUpperCase()}</small><small>Bill No: <span>{i.billNumber}</span></small><small>{i.description}</small></div></div>
-                    </td>
+                    <td className="billing-category-name">{i.description}</td>
                     <td>{money(i.totalPaise)}</td>
                     <td>{money(i.paidPaise)}</td>
                     <td>{i.status === 'CANCELLED' ? money(0) : money(i.totalPaise - i.paidPaise)}</td>
@@ -1263,7 +1266,6 @@ function Billing({ tick, modal, action, go, notify }: any) {
                       <span className={`billing-status ${i.status.toLowerCase()}`}>{i.status !== 'CANCELLED' && <Check size={14} />}{i.status === 'UNPAID' || i.status === 'PENDING' ? 'Outstanding' : statuses[i.status] || i.status}</span>
                     </td>
                     <td><div className="billing-row-actions">
-                      {i.appointmentId && <button className="secondary small" onClick={() => go(`/clinic/reception/billing/${i.appointmentId}`)}>Open billing</button>}
                       {!['PAID', 'CANCELLED'].includes(i.status) && (
                         <button
                           className="secondary small"
@@ -1290,7 +1292,7 @@ function Billing({ tick, modal, action, go, notify }: any) {
                       <details className="billing-more"><summary aria-label="More invoice actions"><MoreHorizontal size={18} /></summary><div><button type="button" onClick={() => navigator.clipboard.writeText(i.billNumber).then(() => notify('Bill number copied')).catch(() => notify('Unable to copy invoice number'))}>Copy bill number</button></div></details>
                     </div></td>
                   </tr>
-                ))}
+                ))}</React.Fragment>)}
               </tbody>
             </table>
           </div>
