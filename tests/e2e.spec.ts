@@ -505,7 +505,7 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await page.getByRole('button', { name: 'Record installment' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('Amount received (₹)').fill('400');
-  await dialog.getByLabel('Payment method').selectOption('UPI');
+  await dialog.getByLabel('Payment method', { exact: true }).selectOption('UPI');
   await dialog.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.locator('table .badge')).toHaveText('Part paid');
   await page.getByRole('button', { name: 'Book appointment' }).click();
