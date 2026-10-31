@@ -1,3 +1,4 @@
+import { commissionEligible } from '../shared/commission.js';
 import { assert } from './core.js';
 import { randomUUID } from 'node:crypto';
 
@@ -25,7 +26,7 @@ export async function recordCheckoutPayment({ store, tx, tenant }: any, invoices
   const sessions = sessionIds.length ? await store.list('treatmentSession', { id: { in: sessionIds } }) : [];
   assert(sessions.length === sessionIds.length, 404, 'Treating session not found.');
   const sessionDoctors = new Map<string, string>(sessions.map((s: any) => [s.id, s.doctorId]));
-  const doctorFor = (invoice: any) => invoice.sessionId ? sessionDoctors.get(invoice.sessionId) : invoice.chargeKind === 'PROCEDURE' ? invoice.doctorId : null;
+  const doctorFor = (invoice: any) => !commissionEligible(invoice) ? null : invoice.sessionId ? sessionDoctors.get(invoice.sessionId) : invoice.chargeKind === 'PROCEDURE' ? invoice.doctorId : null;
   const doctorIds = [...new Set(allocations.map(a => doctorFor(a.invoice)).filter(Boolean))];
   const doctors = doctorIds.length ? await tx.doctor.findMany({ where: { tenantId: tenant.id, id: { in: doctorIds } }, select: { id: true, commissionPercent: true } }) : [];
   assert(doctors.length === doctorIds.length, 404, 'Treating doctor not found.');
@@ -66,7 +67,7 @@ export async function recordInvoicePayment({ store, tx, tenant }: any, data: any
   const row = await store.create('payment', data);
   const paid = invoice.paidPaise + data.amountPaise;
   await store.update('invoice', invoice.id, { paidPaise: paid, status: paid === invoice.totalPaise ? 'PAID' : 'PARTIAL' });
-  if (invoice.sessionId || (invoice.doctorId && invoice.chargeKind === 'PROCEDURE')) {
+  if (commissionEligible(invoice) && (invoice.sessionId || invoice.doctorId)) {
     const doctorId = invoice.sessionId ? (await store.get('treatmentSession', invoice.sessionId)).doctorId : invoice.doctorId;
     const doctor = await tx.doctor.findFirst({ where: { id: doctorId, tenantId: tenant.id } });
     assert(doctor, 404, 'Treating doctor not found.');

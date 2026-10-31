@@ -1,3 +1,4 @@
+import { classifiedInvoices } from './invoice-categories.js';
 import { paymentParts } from './payment-parts.js';
 import { categoryMetadata } from '../shared/bill-categories.js';
 import { workspaceData } from './workspace.js';
@@ -1062,7 +1063,7 @@ clinicApi.get('/accounts', run('reports', async (req: any, res: any, { store, te
   const filters = z.object({ from: dayFilter, to: dayFilter, period: z.enum(['all', 'today', 'yesterday', '7days', '1month', '3months', '6months', 'custom']).optional(), doctorId: z.string().optional(), procedure: z.string().optional() }).parse(req.query);
   assert(!filters.from || !filters.to || filters.from <= filters.to, 400, 'Start date must be before end date.');
   const [invoices, payments, commissions, sessions, doctors, patients, adjustments] = await Promise.all(['invoice', 'payment', 'commission', 'treatmentSession', 'doctor', 'patient', 'patientAdjustment'].map(model => store.list(model)));
-  res.json(accountsReport({ invoices, payments, commissions, sessions, doctors, patients, adjustments }, filters, tenant.settings?.timezone || 'Asia/Kolkata'));
+  res.json(accountsReport({ invoices: await classifiedInvoices(store, invoices), payments, commissions, sessions, doctors, patients, adjustments }, filters, tenant.settings?.timezone || 'Asia/Kolkata'));
 }));
 clinicApi.get(
   '/reports',

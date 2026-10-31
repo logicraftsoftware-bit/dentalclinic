@@ -19,3 +19,20 @@ test('split checkout saves separate method receipts and cumulative invoice balan
   await assert.rejects(recordCheckoutPayment(ctx, invoices, { ...payment, amountPaise: 400000 }, 'bad', {}), /must equal/);
   assert.equal(receipts.length, 2);
 });
+
+test('legacy sessions do not generate commission for lab or clinic receipts', async () => {
+  const commissions: any[] = [];
+  const ctx = { tenant: { id: 'tenant' }, store: { list: async () => [{ id: 'session', doctorId: 'doctor' }] }, tx: {
+    doctor: { findMany: async () => [{ id: 'doctor', commissionPercent: 40 }] },
+    payment: { createMany: async () => {} }, invoice: { update: async () => {} },
+    commission: { createMany: async ({ data }: any) => commissions.push(...data) }, clinicAudit: { createMany: async () => {} },
+  } };
+  const invoices = [
+    { id: 'procedure', description: 'Crown', chargeKind: 'PROCEDURE', totalPaise: 100000 },
+    { id: 'lab', description: 'Lab: Crown', chargeKind: 'LAB', totalPaise: 20000 },
+    { id: 'clinic', description: 'Clinic fee', chargeKind: 'VISIT', totalPaise: 30000 },
+  ].map(i => ({ ...i, sessionId: 'session', paidPaise: 0, status: 'UNPAID' }));
+  await recordCheckoutPayment(ctx, invoices, { amountPaise: 150000, method: 'CASH' }, 'checkout', {});
+  assert.equal(commissions.length, 1);
+  assert.equal(commissions[0].amountPaise, 40000);
+});

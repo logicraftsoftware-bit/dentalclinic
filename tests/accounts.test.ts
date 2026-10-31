@@ -81,3 +81,20 @@ test('cancellation and refund dates preserve original receipts and reconcile cre
   assert.equal(refundMonth.activity[0].sourceInvoiceId, 'i1');
   assert.equal(accountsReport(data, { doctorId: 'd2' }, 'Asia/Kolkata').activity.length, 0);
 });
+
+test('lab and clinic charges exclude even historical commissions and retain doctor invoice detail', () => {
+  const data: any = fixture();
+  data.invoices[1].sessionId = 's1';
+  data.invoices.push({ id: 'visit', patientId: 'p1', sessionId: 's1', doctorId: 'd1', chargeKind: 'VISIT', description: 'Clinic fee', totalPaise: 30000, paidPaise: 30000, createdAt: at('2026-10-01') });
+  data.payments.push({ id: 'visit-payment', invoiceId: 'visit', amountPaise: 30000, method: 'CASH', createdAt: at('2026-10-02') });
+  data.commissions.push({ paymentId: 'r3', amountPaise: 800, status: 'PAID' }, { paymentId: 'visit-payment', amountPaise: 12000, status: 'ACCRUED' });
+  const report = accountsReport(data, {}, 'Asia/Kolkata');
+  assert.equal(report.totals.commission, 2000);
+  assert.equal(report.totals.paidCommission, 1200);
+  assert.equal(report.totals.dueCommission, 800);
+  assert.equal(report.totals.collected, report.totals.clinic + report.totals.commission);
+  const doctor = report.doctors.find(d => d.id === 'd1')!;
+  assert.equal(doctor.details.length, 3);
+  assert.ok(doctor.details.every((r: any) => r.invoiceNumber.startsWith('INV-')));
+  assert.equal(doctor.details.find((r: any) => r.id === 'i2').commission, 0);
+});

@@ -1,3 +1,6 @@
+import { commissionEligible } from '../shared/commission.js';
+import { invoiceBillNumbers } from '../shared/bill-number.js';
+import { categoryBills } from '../shared/bill-categories.js';
 import { dateKey } from './time.js';
 
 // Invoice activity and receipts use their own dates; balances remain current.
@@ -20,6 +23,9 @@ export function accountDateRange(period: string = 'all', zone: string, now = new
 export function accountsReport(data: any, filters: any, zone: string) {
   filters = { ...filters, ...(filters.period && filters.period !== 'custom' ? { from: '', to: '', ...accountDateRange(filters.period, zone) } : {}) };
   const within = (value: any) => { const day = dateKey(value, zone); return (!filters.from || day >= filters.from) && (!filters.to || day <= filters.to); };
+  const numbered = invoiceBillNumbers(data.invoices, zone);
+  const billNumbers = new Map<string, string>();
+  for (const bill of categoryBills(numbered)) for (const id of bill.invoiceIds) billNumbers.set(id, bill.billNumber);
   const sessions = new Map<string, any>(data.sessions.map((s: any) => [s.id, s]));
   const doctors = new Map<string, any>(data.doctors.map((d: any) => [d.id, d]));
   const patients = new Map<string, any>(data.patients.map((p: any) => [p.id, p]));
@@ -45,13 +51,14 @@ export function accountsReport(data: any, filters: any, zone: string) {
     const cancelled = sumEntries(cancellations, 'cancelledPaise');
     const creditAdded = sumEntries(cancellations, 'amountPaise');
     const refunds = -sumEntries(entries.filter(e => e.type === 'REFUND'), 'amountPaise');
-    const commissionReversed = sumEntries(cancellations, 'commissionReversalPaise');
-    const commission = receipts.reduce((n, p) => n + (commissions.get(p.id)?.amountPaise || 0), 0) - commissionReversed;
-    const paidCommission = receipts.reduce((n, p) => { const c = commissions.get(p.id); return n + (['PAID', 'RECOVERY_DUE'].includes(c?.status) ? c.amountPaise : 0); }, 0);
-    const dueCommission = receipts.reduce((n, p) => { const c = commissions.get(p.id); return n + (c?.status === 'ACCRUED' ? c.amountPaise : 0); }, 0);
-    const commissionRecovery = sumEntries(allEntries.filter(e => e.type === 'CANCEL'), 'paidCommissionRecoveryPaise');
+    const eligible = commissionEligible(invoice);
+    const commissionReversed = eligible ? sumEntries(cancellations, 'commissionReversalPaise') : 0;
+    const commission = receipts.reduce((n, p) => n + (eligible ? commissions.get(p.id)?.amountPaise || 0 : 0), 0) - commissionReversed;
+    const paidCommission = receipts.reduce((n, p) => { const c = eligible ? commissions.get(p.id) : undefined; return n + (['PAID', 'RECOVERY_DUE'].includes(c?.status) ? c.amountPaise : 0); }, 0);
+    const dueCommission = receipts.reduce((n, p) => { const c = eligible ? commissions.get(p.id) : undefined; return n + (c?.status === 'ACCRUED' ? c.amountPaise : 0); }, 0);
+    const commissionRecovery = eligible ? sumEntries(allEntries.filter(e => e.type === 'CANCEL'), 'paidCommissionRecoveryPaise') : 0;
     const earned = collected + creditUsed - creditAdded;
-    return [{ id: invoice.id, date: dateKey(invoice.createdAt, zone), patient: patients.get(invoice.patientId)?.name || 'Unknown patient', doctorId, doctor: doctors.get(doctorId)?.name || 'Unassigned / clinic', procedure: invoice.description || 'Unspecified charge', kind: invoice.chargeKind || 'TREATMENT', status: invoice.status,
+    return [{ id: invoice.id, invoiceNumber: billNumbers.get(invoice.id), commissionEligible: eligible, date: dateKey(invoice.createdAt, zone), patient: patients.get(invoice.patientId)?.name || 'Unknown patient', doctorId, doctor: doctors.get(doctorId)?.name || 'Unassigned / clinic', procedure: invoice.description || 'Unspecified charge', kind: invoice.chargeKind || 'TREATMENT', status: invoice.status,
       gross: billed ? invoice.totalPaise + (invoice.discountPaise || 0) : 0, discount: billed ? invoice.discountPaise || 0 : 0, net: (billed ? invoice.totalPaise : 0) - cancelled,
       cancelled, collected, refunds, netCash: collected - refunds, creditAdded, creditUsed, patientCredit, earned,
       commission, commissionReversed, commissionRecovery, paidCommission, dueCommission, clinic: earned - commission,
@@ -61,7 +68,7 @@ export function accountsReport(data: any, filters: any, zone: string) {
   });
   const keys = ['gross', 'discount', 'net', 'cancelled', 'collected', 'refunds', 'netCash', 'creditAdded', 'creditUsed', 'patientCredit', 'earned', 'commission', 'commissionReversed', 'commissionRecovery', 'paidCommission', 'dueCommission', 'clinic', 'outstanding'] as const;
   const sum = (items: any[]) => Object.fromEntries(keys.map(key => [key, items.reduce((n, r) => n + r[key], 0)])) as Record<typeof keys[number], number>;
-  const group = (key: string) => { const groups = new Map<string, any[]>(); for (const row of rows) { const value = row[key]; const items = groups.get(value) || []; items.push(row); groups.set(value, items); } return [...groups].map(([value, items]) => ({ label: key === 'doctorId' ? items[0].doctor : value, count: items.length, ...sum(items) })).sort((a, b) => b.collected - a.collected); };
+  const group = (key: string) => { const groups = new Map<string, any[]>(); for (const row of rows) { const value = row[key]; const items = groups.get(value) || []; items.push(row); groups.set(value, items); } return [...groups].map(([value, items]) => ({ id: value, details: items, label: key === 'doctorId' ? items[0].doctor : value, count: items.length, ...sum(items) })).sort((a, b) => b.collected - a.collected); };
   const methods = new Map<string, number>(['UPI', 'CARD', 'CASH'].map(method => [method, 0]));
   for (const row of rows) for (const receipt of row.receipts) {
     if (receipt.method === 'CREDIT') continue;
@@ -71,7 +78,7 @@ export function accountsReport(data: any, filters: any, zone: string) {
   const activity = adjustments.filter(e => ids.has(e.invoiceId) && within(e.createdAt)).map(e => {
     const invoice = matching.find((i: any) => i.id === e.invoiceId);
     const source = e.sourceId ? adjustments.find(s => s.id === e.sourceId) : null;
-    return { ...e, patient: patients.get(e.patientId)?.name || 'Unknown patient', procedure: invoice.description,
+    return { ...e, patient: patients.get(e.patientId)?.name || 'Unknown patient', procedure: invoice.description, invoiceNumber: billNumbers.get(invoice.id),
       sourceInvoiceId: source?.invoiceId || null, date: dateKey(e.createdAt, zone) };
   }).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   return { filters, activity, paymentMethods: [...methods].map(([method, amount]) => ({ method, amount })), totals: sum(rows), doctors: group('doctorId'), procedures: group('procedure'), rows: rows.sort((a: any, b: any) => b.date.localeCompare(a.date)), doctorOptions: data.doctors.map((d: any) => ({ id: d.id, name: d.name })), procedureOptions: [...new Set(data.invoices.map((i: any) => i.description))].sort() };
