@@ -1,3 +1,4 @@
+import { paymentParts } from './payment-parts.js';
 import { departmentCategory } from '../shared/bill-categories.js';
 import { z } from 'zod';
 import { assert, id, money, hash } from './core.js';
@@ -10,7 +11,7 @@ export const feeBillSchema = z.object({
   checkoutKey: z.string().uuid(),
   clinicFee: z.boolean(),
   lines: z.array(z.object({ catalogItemId: id, doctorId: id, department: z.enum(chargeDepartments) }).strict()).max(50),
-  payment: z.object({ status: z.enum(['PAID', 'PARTIAL', 'PENDING']), method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), amountPaise: money }).strict(),
+  payment: z.object({ status: z.enum(['PAID', 'PARTIAL', 'PENDING']), splits: paymentParts, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), amountPaise: money }).strict(),
 }).strict();
 
 export async function saveFeeBill(ctx: any, patientId: string, input: z.infer<typeof feeBillSchema>, actor: any, appointment?: any) {
@@ -54,7 +55,7 @@ export async function saveFeeBill(ctx: any, patientId: string, input: z.infer<ty
       invoices.push(await store.create('invoice', { ...base, sourceKey: `${input.checkoutKey}:${index}:${kind}`, billCategory: departmentCategory(department), department, catalogItemId: charge.id, doctorId: doctor.id, chargeKind: kind, description: kind === 'LAB' ? `Lab: ${charge.name}` : charge.name, totalPaise: value }));
     }
   }
-  const paidInvoices = await recordCheckoutPayment(ctx, invoices, { amountPaise: amount, method: input.payment.method, reference: '' }, input.checkoutKey, actor);
+  const paidInvoices = await recordCheckoutPayment(ctx, invoices, { amountPaise: amount, splits: input.payment.splits, method: input.payment.method, reference: '' }, input.checkoutKey, actor);
   if (appointment) await store.update('appointment', appointment.id, { paymentStatus: input.payment.status });
   await store.audit(actor.userId, 'fees.bill.created', appointment?.id || patientId);
   const result = { invoices: paidInvoices, totalPaise: total, paidPaise: amount, balancePaise: total - amount };

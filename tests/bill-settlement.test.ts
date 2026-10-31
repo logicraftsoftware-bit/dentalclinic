@@ -89,3 +89,14 @@ test('legacy categories resolve by master and saved category snapshots survive m
   assert.equal(billingLines([{ id: 'p', sourceKey: source + 'PROCEDURE', description: 'Biopsy', totalPaise: 100, paidPaise: 0, billCategory: 'SPECIALITY' },
     { id: 'l', sourceKey: source + 'LAB', description: 'Lab: Biopsy', totalPaise: 50, paidPaise: 0, billCategory: 'SPECIALITY' }], []).length, 1);
 });
+
+test('split payments retain cash and card amounts across multiple procedures', () => {
+  const splits = [{ amountPaise: 300000, method: 'CASH', reference: '' }, { amountPaise: 200000, method: 'CARD', reference: 'card-ref' }];
+  const plans = billSettlements([
+    { kind: 'saved', net: 400000, paid: 0, target: { invoiceIds: ['first'] } },
+    { kind: 'saved', net: 200000, paid: 0, target: { invoiceIds: ['second'] } },
+  ], 0, 500000, 'CASH', '', splits);
+  assert.deepEqual(plans.map(p => p.splits), [[splits[0], { ...splits[1], amountPaise: 100000 }], [{ ...splits[1], amountPaise: 100000 }]]);
+  assert.equal(splits[0].amountPaise, 300000);
+  assert.throws(() => billSettlements(rows, 0, 70000, 'CASH', '', splits), /must equal/);
+});

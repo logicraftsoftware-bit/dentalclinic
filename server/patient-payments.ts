@@ -5,6 +5,12 @@ import { randomUUID } from 'node:crypto';
 // holds the tenant write lock. Batch inserts avoid re-reading every invoice and
 // patient for each payment while retaining the same transaction and commissions.
 export async function recordCheckoutPayment({ store, tx, tenant }: any, invoices: any[], payment: any, checkoutKey: string, actor: any) {
+  if (payment.splits !== undefined) {
+    assert(payment.splits.reduce((sum: number, part: any) => sum + part.amountPaise, 0) === payment.amountPaise, 400, 'Payment method amounts must equal the total paid amount.');
+    let updated = invoices;
+    for (const [index, part] of payment.splits.entries()) updated = await recordCheckoutPayment({ store, tx, tenant }, updated, part, `${checkoutKey}:split:${index}`, actor);
+    return updated;
+  }
   assert(invoices.every(i => i.status !== 'CANCELLED'), 409, 'Cancelled procedures cannot receive payments.');
   let remaining = payment.amountPaise;
   const allocations: { invoice: any; amountPaise: number; id: string }[] = [];
@@ -42,7 +48,13 @@ export async function recordCheckoutPayment({ store, tx, tenant }: any, invoices
   });
 }
 
-export async function recordInvoicePayment({ store, tx, tenant }: any, data: any, actor: any) {
+export async function recordInvoicePayment({ store, tx, tenant }: any, data: any, actor: any): Promise<any> {
+  if (data.splits !== undefined) {
+    assert(data.splits.reduce((sum: number, part: any) => sum + part.amountPaise, 0) === data.amountPaise, 400, 'Payment method amounts must equal the total paid amount.');
+    const results = [];
+    for (const [index, part] of data.splits.entries()) results.push(await recordInvoicePayment({ store, tx, tenant }, { ...part, invoiceId: data.invoiceId, idempotencyKey: `${data.idempotencyKey}:split:${index}` }, actor));
+    return { payment: results.map(r => r.payment), replayed: results.every(r => r.replayed) };
+  }
   const previous = await store.list('payment', { idempotencyKey: data.idempotencyKey });
   if (previous.length) {
     assert(previous[0].invoiceId === data.invoiceId && previous[0].amountPaise === data.amountPaise && previous[0].method === data.method && previous[0].reference === data.reference, 409, 'Idempotency key reused with different payment data.');

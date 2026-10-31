@@ -1,3 +1,4 @@
+import { paymentParts } from './payment-parts.js';
 import { categoryMetadata } from '../shared/bill-categories.js';
 import { workspaceData } from './workspace.js';
 import { parsePartial } from './validation.js';
@@ -757,7 +758,7 @@ clinicApi.post(
       .object({
         invoiceId: id,
         amountPaise: money.refine((v) => v > 0),
-        method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']),
+        splits: paymentParts, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']),
         reference: z.string().max(200).default(''),
         idempotencyKey: z.string().min(16).max(100),
       })

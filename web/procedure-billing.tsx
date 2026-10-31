@@ -1,3 +1,4 @@
+import { splitPayload } from './split-payment';
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { api, money } from './api';
@@ -61,7 +62,7 @@ export function BillingDesk({ appointmentId, action, tick, close, zone, workspac
     try {
       await action(() => api(`/clinic/reception/${appointmentId}/line-checkout`, 'POST', {
         checkoutKey: keys[category], category, addClinicFee: category === 'CLINIC' && fees.clinicFee, lines: lines.map(({ billCategory, ...line }) => line),
-        settlements: billSettlements(selected, plan.discount, plan.collect, payment.method, payment.reference),
+        settlements: billSettlements(selected, plan.discount, plan.collect, payment.method, payment.reference, payment.status === 'PENDING' ? undefined : splitPayload(payment.splits)),
       }), `${categoryLabels[category]} bill saved`, { reportError: false });
       const savedKeys = new Set(lines.map(l => l.key));
       setFees(old => { const remaining = old.lines.filter(l => !savedKeys.has(l.key)); return { ...old, clinicFee: category === 'CLINIC' ? false : old.clinicFee, lines: remaining, general: remaining.some(l => l.department === chargeDepartments[0]), speciality: remaining.some(l => l.department !== chargeDepartments[0]) }; });

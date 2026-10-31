@@ -1,3 +1,4 @@
+import { paymentParts } from './payment-parts.js';
 import { z } from 'zod';
 import { assert, id, money, hash } from './core.js';
 import { billCategories, invoiceBillGroupKey } from '../shared/bill-categories.js';
@@ -8,7 +9,7 @@ import { updateVisitBalance } from './patient-adjustments.js';
 export function registerCategoryPayments(router: any, run: any) {
   router.post('/category-payments', run('billing', async (req: any, res: any, ctx: any, actor: any) => {
     const input = z.object({ checkoutKey: z.string().uuid(), category: z.enum(billCategories), invoiceIds: z.array(id).min(1).max(500),
-      amountPaise: money, discountPaise: money.default(0), method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default('') }).strict().parse(req.body);
+      amountPaise: money, discountPaise: money.default(0), splits: paymentParts, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default('') }).strict().parse(req.body);
     assert(new Set(input.invoiceIds).size === input.invoiceIds.length, 400, 'Duplicate invoice.');
     const { store, tx, tenant } = ctx;
     const key = `category-payment:${actor.userId}:${input.checkoutKey}`, fingerprint = hash(JSON.stringify(input));

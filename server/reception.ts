@@ -1,3 +1,4 @@
+import { paymentParts } from './payment-parts.js';
 import { classifiedInvoices } from './invoice-categories.js';
 import { registerCategoryPayments } from './category-payments.js';
 import { categoryMetadata, billCategories } from '../shared/bill-categories.js';
@@ -132,7 +133,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
     const input = z.object({
       checkoutKey: z.string().uuid(), lines: billSchema.shape.lines,
       discount: z.object({ type: z.enum(['AMOUNT', 'PERCENT']), value: z.number().finite().min(0).max(1000000000), reason: z.string().trim().max(200).default('') }).strict(),
-      payment: z.object({ amountPaise: money, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default('') }).strict(),
+      payment: z.object({ amountPaise: money, splits: paymentParts, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default('') }).strict(),
     }).strict().parse(req.body);
     const key = `reception-checkout:${actor.userId}:${appointment.id}:${input.checkoutKey}`;
     const fingerprint = hash(JSON.stringify(input));
@@ -181,7 +182,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
       lines: z.array(z.object({ key: z.string().uuid(), name: z.string().trim().min(1).max(200), doctorId: id, chargePaise: money, labChargePaise: money, catalogItemId: id.optional(), department: z.enum(chargeDepartments).optional() }).strict().refine(v => v.chargePaise + v.labChargePaise > 0, 'Enter a procedure or lab charge.')).max(50),
       settlements: z.array(z.object({
         invoiceIds: z.array(id).min(1).max(100).optional(), lineKey: z.string().uuid().optional(), feeIndex: z.number().int().min(0).max(2).optional(),
-        discountPaise: money, amountPaise: money, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default(''),
+        discountPaise: money, amountPaise: money, splits: paymentParts, method: z.enum(['CASH', 'UPI', 'CARD', 'BANK']), reference: z.string().trim().max(200).default(''),
       }).strict().refine(v => Number(!!v.invoiceIds) + Number(!!v.lineKey) + Number(v.feeIndex !== undefined) === 1, 'Select exactly one procedure.')).max(500),
     }).strict().parse(req.body);
     assert(new Set(input.lines.map(l => l.key)).size === input.lines.length, 400, 'Duplicate procedure key.');
@@ -223,7 +224,7 @@ export function registerReceptionRoutes(router: Router, run: any) {
         Object.assign(i, change);
         audits.push({ tenantId: tenant.id, actorId: actor.userId, action: 'invoice.discount.applied', recordId: i.id });
       }
-      const changed = await recordCheckoutPayment(ctx, plan.selected, { amountPaise: plan.amountPaise, method: plan.method, reference: plan.reference }, input.checkoutKey, actor);
+      const changed = await recordCheckoutPayment(ctx, plan.selected, { amountPaise: plan.amountPaise, splits: plan.splits, method: plan.method, reference: plan.reference }, input.checkoutKey, actor);
       for (const i of changed) updates.set(i.id, i);
     }
     if (audits.length) await tx.clinicAudit.createMany({ data: audits });

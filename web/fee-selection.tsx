@@ -1,3 +1,4 @@
+import { SplitPaymentFields, splitPayload, type PaymentPart } from './split-payment';
 import { useEffect, useState } from 'react';
 import { api, money } from './api';
 import { SearchableSelect } from './searchable-select';
@@ -6,7 +7,7 @@ import { chargeDepartment, chargeDepartments } from './charge-groups';
 export type FeeSelection = {
   clinicFee: boolean; general: boolean; speciality: boolean; department: string;
   lines: { key: string; catalogItemId: string; doctorId: string; department: string }[];
-  status: string; method: string; amount: string | null;
+  splits?: PaymentPart[]; status: string; method: string; amount: string | null;
 };
 export const initialFees = (): FeeSelection => ({ clinicFee: false, general: false, speciality: false, department: '', lines: [], status: 'PAID', method: 'CASH', amount: null });
 export function feeTotal(value: FeeSelection, charges: any[], extra = 0) {
@@ -16,7 +17,7 @@ export function feeTotal(value: FeeSelection, charges: any[], extra = 0) {
   }, 0);
 }
 export function feePayload(value: FeeSelection, total: number, checkoutKey: string) {
-  return { checkoutKey, clinicFee: value.clinicFee, lines: value.lines.map(({ key, ...line }) => line), payment: { status: value.status, method: value.method, amountPaise: value.status === 'PENDING' ? 0 : value.status === 'PAID' ? total : Math.round(Number(value.amount || 0) * 100) } };
+  return { checkoutKey, clinicFee: value.clinicFee, lines: value.lines.map(({ key, ...line }) => line), payment: { splits: value.status === 'PENDING' ? undefined : splitPayload(value.splits), status: value.status, method: value.method, amountPaise: value.status === 'PENDING' ? 0 : value.status === 'PAID' ? total : Math.round(Number(value.amount || 0) * 100) } };
 }
 
 export function FeeSelectionFields({ value, onChange, charges, groups, doctors, extraTotal = 0, showPayment = true, showClinicFee = true }: { value: FeeSelection; onChange: (value: FeeSelection) => void; charges: any[]; groups: any[]; doctors: any[]; extraTotal?: number; showPayment?: boolean; showClinicFee?: boolean }) {
@@ -51,9 +52,9 @@ export function FeeSelectionFields({ value, onChange, charges, groups, doctors, 
     </fieldset>
     {showPayment && <fieldset><legend>Payment</legend><div className="form-fields">
       <label>Payment status<select aria-label="Payment status" value={value.status} onChange={e => update({ status: e.target.value, amount: e.target.value === 'PARTIAL' ? '' : null })}><option value="PAID">Paid</option><option value="PARTIAL">Part paid</option><option value="PENDING">Unpaid</option></select></label>
-      <label>Payment mode<select aria-label="Payment mode" disabled={value.status === 'PENDING'} value={value.method} onChange={e => update({ method: e.target.value })}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method === 'CASH' ? 'Cash' : method === 'CARD' ? 'Card' : method === 'BANK' ? 'Bank transfer' : method}</option>)}</select></label>
+      {!value.splits && <label>Payment mode<select aria-label="Payment mode" disabled={value.status === 'PENDING'} value={value.method} onChange={e => update({ method: e.target.value })}>{['CASH', 'UPI', 'CARD', 'BANK'].map(method => <option key={method} value={method}>{method === 'CASH' ? 'Cash' : method === 'CARD' ? 'Card' : method === 'BANK' ? 'Bank transfer' : method}</option>)}</select></label>}
       <label>Paid amount (₹)<input type="number" min={value.status === 'PARTIAL' ? '0.01' : '0'} max={value.status === 'PARTIAL' ? Math.max(0, total - 1) / 100 : total / 100} step="0.01" required disabled={value.status === 'PENDING'} value={value.status === 'PENDING' ? '0' : value.status === 'PAID' ? String(total / 100) : value.amount ?? ''} onChange={e => update({ amount: e.target.value, status: e.target.value !== '' && Math.round(Number(e.target.value) * 100) === total ? 'PAID' : 'PARTIAL' })} /></label>
-    </div><p>Balance: {money(total - (value.status === 'PENDING' ? 0 : value.status === 'PAID' ? total : Math.round(Number(value.amount ?? total / 100) * 100)))}</p></fieldset>}
+    </div>{value.status !== 'PENDING' && <SplitPaymentFields parts={value.splits} total={value.status === 'PAID' ? total : Math.round(Number(value.amount || 0) * 100)} onChange={splits => update({ splits })} />}<p>Balance: {money(total - (value.status === 'PENDING' ? 0 : value.status === 'PAID' ? total : Math.round(Number(value.amount ?? total / 100) * 100)))}</p></fieldset>}
   </>;
 }
 

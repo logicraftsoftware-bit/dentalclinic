@@ -1087,11 +1087,14 @@ function payModal(modal: any, action: any, invoice: any) {
         options: ['CASH', 'UPI', 'CARD', 'BANK'].map((value) => ({ value, label: value })),
       },
       { key: 'reference', label: 'Transaction reference' },
+      { key: 'secondAmount', label: 'Amount using another method (₹, included in total)', type: 'money', value: 0 },
+      { key: 'secondMethod', label: 'Second payment method', type: 'select', options: ['CARD', 'CASH', 'UPI', 'BANK'].map(value => ({ value, label: value })) },
+      { key: 'secondReference', label: 'Second transaction reference' },
     ],
     submit: (data: any) =>
       action(
         () =>
-          api('/clinic/payments', 'POST', { ...data, invoiceId: invoice.id, idempotencyKey: key }),
+          api('/clinic/payments', 'POST', { amountPaise: data.amountPaise, method: data.method, reference: data.reference, invoiceId: invoice.id, idempotencyKey: key, ...(data.secondAmount > 0 ? { splits: [{ amountPaise: data.amountPaise - data.secondAmount, method: data.method, reference: data.reference }, { amountPaise: data.secondAmount, method: data.secondMethod, reference: data.secondReference }] } : {}) }),
         'Payment recorded',
       ),
   });
