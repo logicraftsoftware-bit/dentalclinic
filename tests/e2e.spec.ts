@@ -549,6 +549,8 @@ test('clinic owner completes signup, patient charting, session billing and payme
   await bill.close();
   await page.getByRole('button', { name: 'Back to appointments', exact: true }).click();
   await expect(page).toHaveURL(/\/clinic\/appointments$/);
+  // Tomorrow can be in the next month; open its calendar before selecting the day.
+  await page.goto('/clinic/appointments?month=' + local.slice(0, 7));
   await page.getByRole('button', { name: local + ', 1 appointment', exact: true }).click();
   await expect(page).toHaveURL(new RegExp('/clinic/appointments/' + local));
   await expect(page.getByRole('button', { name: /Dr. Aditi Sharma.*Endodontist/ })).toBeVisible();
